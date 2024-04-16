@@ -1745,7 +1745,7 @@ private:
  * The implementation of this algorithm was inspired by the
  * mapping command ``map`` in ABC.
  */
-template<class Ntk, unsigned CutSize = 5u, typename CutData = cut_enumeration_tech_map_cut, unsigned NInputs, classification_type Configuration>
+template<class Ntk, unsigned CutSize = 6u, typename CutData = cut_enumeration_tech_map_cut, unsigned NInputs, classification_type Configuration>
 binding_view<klut_network> map( Ntk const& ntk, tech_library<NInputs, Configuration> const& library, map_params const& ps = {}, map_stats* pst = nullptr )
 {
   static_assert( is_network_type_v<Ntk>, "Ntk is not a network type" );

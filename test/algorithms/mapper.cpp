@@ -27,6 +27,7 @@ std::string const test_library = "GATE   inv1    1 O=!a;            PIN * INV 1 
                                  "GATE   nand2   2 O=!(a*b);        PIN * INV 1 999 1.0 0.2 1.0 0.2\n"
                                  "GATE   xor2    5 O=a^b;           PIN * UNKNOWN 2 999 1.9 0.5 1.9 0.5\n"
                                  "GATE   maj3    3 O=a*b+a*c+b*c;   PIN * INV 1 999 2.0 0.2 2.0 0.2\n"
+                                 "GATE   maj6    6 O=a*b*c*d+a*b*e*f+c*d*e*f;   PIN * INV 1 999 3.0 0.2 3.0 0.2\n"
                                  "GATE   buf     2 O=a;             PIN * NONINV 1 999 1.0 0.0 1.0 0.0\n"
                                  "GATE   zero    0 O=CONST0;\n"
                                  "GATE   one     0 O=CONST1;";
@@ -68,6 +69,46 @@ TEST_CASE( "Map of MAJ3", "[mapper]" )
   CHECK( luts.num_gates() == 1u );
   CHECK( st.area == 3.0f );
   CHECK( st.delay == 2.0f );
+}
+
+TEST_CASE( "Map of MAJ6", "[mapper]" )
+{
+  std::vector<gate> gates;
+
+  std::istringstream in( test_library );
+  auto result = lorina::read_genlib( in, genlib_reader( gates ) );
+  CHECK( result == lorina::return_code::success );
+
+  tech_library<6> lib( gates );
+
+  aig_network aig;
+  const auto a = aig.create_pi();
+  const auto b = aig.create_pi();
+  const auto c = aig.create_pi();
+  const auto d = aig.create_pi();
+  const auto e = aig.create_pi();
+  const auto f = aig.create_pi();
+
+  const auto a1 = aig.create_and( a, b );
+  const auto a2 = aig.create_and( c, d );
+  const auto a3 = aig.create_and( e , f );
+
+  const auto g = aig.create_maj( a1, a2, a3 );
+
+  aig.create_po( g );
+
+  map_params ps;
+  map_stats st;
+  binding_view<klut_network> luts = map( aig, lib, ps, &st );
+
+  luts.report_gates_usage();
+
+  CHECK( luts.size() == 9u );
+  CHECK( luts.num_pis() == 6u );
+  CHECK( luts.num_pos() == 1u );
+  CHECK( luts.num_gates() == 1u );
+  CHECK( st.area == 6.0f );
+  CHECK( st.delay == 3.0f );
 }
 
 TEST_CASE( "Map of bad MAJ3 and constant output", "[mapper]" )
