@@ -137,43 +137,45 @@ public:
     node.rank = nodes_per_level_count[node.level]++;
   }
 
-  // Method to create a binary node
-  signal create_node(operation_t& operation, signal fi0, signal fi1) {
-    Node new_node;
-    new_node.fanin_node[0] = fi0;
-    new_node.fanin_node[1] = fi1;
-    new_node.is_binary = true;
+  void initialize_node(Node& new_node, operation_t& operation, const signal* fanin_nodes, const size_t fanin_count)
+  {
+    for(size_t i = 0; i < fanin_count; ++i) {
+      new_node.fanin_node[i] = fanin_nodes[i];
+    }
+    new_node.is_binary = (fanin_count == 2);
+    update_node_properties(new_node, operation);
+    for(size_t i = 0; i < fanin_count; ++i) {
+      new_node.fanin_edge[i] = create_edge( fanin_nodes[i], new_node.index );
+    }
+    nodes.push_back(new_node); // Add new node into nodes vector
+  }
 
+  signal create_node(operation_t& operation, const signal fi0, const signal fi1)
+  {
+    Node new_node;
+    const signal fanin_nodes[2] = { fi0, fi1 };
     std::visit(overloaded {
-                    [this, &new_node, fi0, fi1](binary_t& func) {
-                      new_node.output_function = func(GetTruthTableOfFanin(fi0), GetTruthTableOfFanin(fi1));
-                      return; // Explicitly defined return type as void
+                    [this, &new_node, &fanin_nodes](binary_t& func) {
+                      new_node.output_function = func(GetTruthTableOfFanin(fanin_nodes[0]), GetTruthTableOfFanin(fanin_nodes[1]));
+                      return;
                     },
                     [](auto&) -> void {
                       throw std::invalid_argument("Unexpected ternary operation provided for binary node creation");
                     }
                 }, operation);
 
-    update_node_properties(new_node, operation);
-    signal e0 = create_edge( fi0, new_node.index );
-    signal e1 = create_edge( fi1, new_node.index );
-    new_node.fanin_edge[0] = e0;
-    new_node.fanin_edge[1] = e1;
-    nodes.push_back(new_node); // Add new node into nodes vector
+    initialize_node(new_node, operation, fanin_nodes, 2);
+
     return new_node.index;
   }
 
-  // Method to create a ternary node
-  signal create_node(operation_t& operation, signal fi0, signal fi1, signal fi2) {
+  signal create_node(operation_t& operation, const signal fi0, const signal fi1, const signal fi2)
+  {
     Node new_node;
-    new_node.fanin_node[0] = fi0;
-    new_node.fanin_node[1] = fi1;
-    new_node.fanin_node[2] = fi2;
-    new_node.is_binary = false;
-
+    const signal fanin_nodes[3] = { fi0, fi1, fi2 };
     std::visit(overloaded {
-                    [this, &new_node, fi0, fi1, fi2](ternary_t& func) {
-                      new_node.output_function = func(GetTruthTableOfFanin(fi0), GetTruthTableOfFanin(fi1), GetTruthTableOfFanin(fi2));
+                    [this, &new_node, &fanin_nodes](ternary_t& func) {
+                      new_node.output_function = func(GetTruthTableOfFanin(fanin_nodes[0]), GetTruthTableOfFanin(fanin_nodes[1]), GetTruthTableOfFanin(fanin_nodes[2]));
                       return;
                     },
                     [](auto&) -> void {
@@ -181,17 +183,8 @@ public:
                     }
                 }, operation);
 
-    update_node_properties(new_node, operation);
-    create_edge( fi0, new_node.index );
-    create_edge( fi1, new_node.index );
-    create_edge( fi2, new_node.index );
-    signal e0 = create_edge( fi0, new_node.index );
-    signal e1 = create_edge( fi1, new_node.index );
-    signal e2 = create_edge( fi2, new_node.index );
-    new_node.fanin_edge[0] = e0;
-    new_node.fanin_edge[1] = e1;
-    new_node.fanin_edge[2] = e2;
-    nodes.push_back(new_node); // Add new node into nodes vector
+    initialize_node(new_node, operation, fanin_nodes, 3);
+
     return nodes.size() + pis.size() - 1;
   }
 
@@ -229,14 +222,18 @@ public:
       std::visit(
         overloaded {
             [this, &n](EnumerationNetwork::binary_t& func) {
-              /*n.output_function = func(
-              n.fanin_edge[0].inv ? ~GetTruthTableOfFanin(n.fanin_node[0]) : GetTruthTableOfFanin(n.fanin_node[0]),
-                  n.fanin_edge[1].inv ? ~GetTruthTableOfFanin(n.fanin_node[1]) : GetTruthTableOfFanin(n.fanin_node[1])
-                  );*/
-              n.output_function = func(GetTruthTableOfFanin(n.fanin_node[0]), GetTruthTableOfFanin(n.fanin_node[1]));
+              n.output_function = func(
+              edge_at(n.fanin_edge[0]).inv ? ~GetTruthTableOfFanin(n.fanin_node[0]) : GetTruthTableOfFanin(n.fanin_node[0]),
+                  edge_at(n.fanin_edge[1]).inv ? ~GetTruthTableOfFanin(n.fanin_node[1]) : GetTruthTableOfFanin(n.fanin_node[1])
+                  );
+              // n.output_function = func(GetTruthTableOfFanin(n.fanin_node[0]), GetTruthTableOfFanin(n.fanin_node[1]));
             },
             [this, &n](EnumerationNetwork::ternary_t& func) {
-              n.output_function = func(GetTruthTableOfFanin(n.fanin_node[0]), GetTruthTableOfFanin(n.fanin_node[1]), GetTruthTableOfFanin(n.fanin_node[2]));
+              n.output_function = func(
+                  edge_at(n.fanin_edge[0]).inv ? ~GetTruthTableOfFanin(n.fanin_node[0]) : GetTruthTableOfFanin(n.fanin_node[0]),
+                  edge_at(n.fanin_edge[1]).inv ? ~GetTruthTableOfFanin(n.fanin_node[1]) : GetTruthTableOfFanin(n.fanin_node[1]),
+                  edge_at(n.fanin_edge[2]).inv ? ~GetTruthTableOfFanin(n.fanin_node[2]) : GetTruthTableOfFanin(n.fanin_node[2])
+              );
             }
         },
         n.operation // This should be an instance of either binary_t or ternary_t
@@ -334,15 +331,8 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
       operations[0] // This should be an instance of either binary_t or ternary_t
   );*/
 
-  int n0 = enum_ntk.create_node(operations[0], 0, 1);
-  int n1 = enum_ntk.create_node(operations[0], 1, 2);
-  std::cout << "n" << enum_ntk.node_at(n0).index << std::endl;
-  std::cout << "n" << enum_ntk.node_at(n1).index << std::endl;
-  std::cout << "fi" << enum_ntk.node_at(n0).fanin_edge[0] << std::endl;
-  std::cout << "fi" << enum_ntk.node_at(n1).fanin_edge[0] << std::endl;
-
-  // Recompute the Boolean function of the Network
-  enum_ntk.recompute_node_functions();
+  enum_ntk.create_node(operations[0], 0, 1);
+  enum_ntk.create_node(operations[0], 1, 2);
 
   // Compute all COmbinations for inverted edges
   int edge_invs = 0;
@@ -356,7 +346,10 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
       enum_ntk.edge_at(e).inv = inv_value;
       ++i;
     });
-    break;
+    if ( j == 1 )
+    {
+      break;
+    }
   }
   printf("Edge Combinations: %i\n", edge_invs);
 
@@ -386,16 +379,18 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
     continue;
   }*/
 
-  printf("\n1: ");
+  printf("\n0: ");
   kitty::print_binary( enum_ntk.pi_at(0).tt );
-  printf("\n2: ");
+  printf("\n1: ");
   kitty::print_binary( enum_ntk.pi_at(1).tt );
-  printf("\n3: ");
+  printf("\n2: ");
   kitty::print_binary( enum_ntk.pi_at(2).tt );
   enum_ntk.foreach_node([&]( auto const& n ) {
     printf("\n%ld: ", n);
     kitty::print_binary( enum_ntk.node_at(n).output_function );
   });
+  // Recompute the Boolean function of the Network
+  enum_ntk.recompute_node_functions();
   enum_ntk.foreach_node([&]( auto const& n ) {
     printf("\n%ld: ", n);
     kitty::print_binary( enum_ntk.node_at(n).output_function );
