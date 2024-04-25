@@ -18,9 +18,9 @@
 #include <mockturtle/networks/klut.hpp>
 #include <mockturtle/networks/xag.hpp>
 
-// define library for input gates
+// define library for input gates CHECK
 
-// read in library to catch all available gates
+// read in library to catch all available gates CHECK
 // the AND and INV have to be included
 // for all 2-input Boolean functions there is a planar solution iff the XOR gate is also included
 
@@ -29,12 +29,13 @@
 // define combination function
 /*rules and restrictions of combinations:
  * 1. for n inputs the next level has max ( n - 1 ) 2-input functions ( AND, OR, XOR)
- * 2. for n inputs the next level has max n nodes ( 2-input functions + INVs )
- * 3. the ordering of inputs impacts the ordering of ndoes in the next level -> restrictions to the fan-in/fan-ut relations
+ * 2. Inverters should be implemented as inverting edges
+ * 3. the ordering of inputs impacts the ordering of nodes in the next level -> restrictions to the fan-in/fan-ut relations
  * */
 
 // how many layers are reasonable until no new Boolean function can be found?
 
+#include <bitset>
 #include <kitty/kitty.hpp>
 #include <variant>
 #include <vector>
@@ -50,8 +51,21 @@ public:
   using ternary_t = std::function<TruthTable(const TruthTable&, const TruthTable&, const TruthTable&)>;
   using operation_t = std::variant<binary_t, ternary_t>;
 
+  struct Pi : public TruthTable {
+    TruthTable tt; // Each Pi has a unique truth table
+    signal index;
+    const uint64_t level = 0;
+  };
+
+  struct Edge {
+    signal source;
+    signal dest;
+    bool inv;
+  };
+
   struct Node {
-    std::array<signal, 3> fanin = {0, 0, 0}; // default initialize all fanins to 0
+    std::array<signal, 3> fanin_node = {0, 0, 0}; // default initialize all fanins to 0
+    std::array<signal, 3> fanin_edge = {0, 0, 0};
     bool is_binary = true; // a node is binary by default
     signal index;
     uint64_t level;
@@ -60,14 +74,9 @@ public:
     TruthTable output_function; // the node's output
   };
 
-  struct Pi : public TruthTable {
-    TruthTable tt; // Each Pi has a unique truth table
-    signal index;
-    const uint64_t level = 0;
-  };
-
   std::vector<Pi> pis;  // primary inputs
   std::vector<Node> nodes;  // nodes
+  std::vector<Edge> edges;  // edges
   std::vector<uint64_t> nodes_per_level_count;
 
   // Create Primary Input
@@ -83,9 +92,25 @@ public:
     }
   }
 
+  TruthTable GetTruthTableOfFanin(signal fanin) {
+    if (is_pi(fanin)) {
+      return pi_at(fanin).tt;
+    }
+    return node_at(fanin).output_function;
+  }
+
+  signal create_edge( signal source, signal dest, bool inv = false ) {
+    Edge new_edge;
+    new_edge.source = source;
+    new_edge.dest = dest;
+    new_edge.inv = inv;
+    edges.push_back(new_edge);
+    return edges.size() - 1; // return index of last element
+  }
+
   // Method to update node properties
-  void update_node_properties(Node& node, operation_t&& operation) {
-    node.operation = std::move(operation); // Move operation into the new node
+  void update_node_properties(Node& node, operation_t& operation) {
+    node.operation = operation; // Move operation into the new node
     if (!pis.empty()) {
       node.index = static_cast<signal>(pis.size() + nodes.size()); // Index starts after the indexes of pis
     } else {
@@ -95,7 +120,7 @@ public:
     // Calculate the level of the new node
     signal max_level = 0;
     for(int i = 0; i < (node.is_binary ? 2 : 3); ++i) {
-      signal level = get_level(node.fanin[i]);
+      signal level = get_level(node.fanin_node[i]);
       if(level > max_level) {
         max_level = level;
       }
@@ -110,22 +135,13 @@ public:
 
     // Assign the new node's rank and increment the count for this level
     node.rank = nodes_per_level_count[node.level]++;
-
-    nodes.push_back(node); // Add new node into nodes vector
-  }
-
-  TruthTable GetTruthTableOfFanin(signal fanin) {
-    if (is_pi(fanin)) {
-      return pi_at(fanin).tt;
-    }
-    return node_at(fanin).output_function;
   }
 
   // Method to create a binary node
-  void create_node(operation_t&& operation, signal fi0, signal fi1) {
+  signal create_node(operation_t& operation, signal fi0, signal fi1) {
     Node new_node;
-    new_node.fanin[0] = fi0;
-    new_node.fanin[1] = fi1;
+    new_node.fanin_node[0] = fi0;
+    new_node.fanin_node[1] = fi1;
     new_node.is_binary = true;
 
     std::visit(overloaded {
@@ -133,20 +149,26 @@ public:
                       new_node.output_function = func(GetTruthTableOfFanin(fi0), GetTruthTableOfFanin(fi1));
                       return; // Explicitly defined return type as void
                     },
-                    [](auto&) -> void { // Changed return type as void
+                    [](auto&) -> void {
                       throw std::invalid_argument("Unexpected ternary operation provided for binary node creation");
                     }
                 }, operation);
 
-    update_node_properties(new_node, std::move(operation));
+    update_node_properties(new_node, operation);
+    signal e0 = create_edge( fi0, new_node.index );
+    signal e1 = create_edge( fi1, new_node.index );
+    new_node.fanin_edge[0] = e0;
+    new_node.fanin_edge[1] = e1;
+    nodes.push_back(new_node); // Add new node into nodes vector
+    return new_node.index;
   }
 
   // Method to create a ternary node
-  void create_node(operation_t&& operation, signal fi0, signal fi1, signal fi2) {
+  signal create_node(operation_t& operation, signal fi0, signal fi1, signal fi2) {
     Node new_node;
-    new_node.fanin[0] = fi0;
-    new_node.fanin[1] = fi1;
-    new_node.fanin[2] = fi2;
+    new_node.fanin_node[0] = fi0;
+    new_node.fanin_node[1] = fi1;
+    new_node.fanin_node[2] = fi2;
     new_node.is_binary = false;
 
     std::visit(overloaded {
@@ -159,7 +181,18 @@ public:
                     }
                 }, operation);
 
-    update_node_properties(new_node, std::move(operation));
+    update_node_properties(new_node, operation);
+    create_edge( fi0, new_node.index );
+    create_edge( fi1, new_node.index );
+    create_edge( fi2, new_node.index );
+    signal e0 = create_edge( fi0, new_node.index );
+    signal e1 = create_edge( fi1, new_node.index );
+    signal e2 = create_edge( fi2, new_node.index );
+    new_node.fanin_edge[0] = e0;
+    new_node.fanin_edge[1] = e1;
+    new_node.fanin_edge[2] = e2;
+    nodes.push_back(new_node); // Add new node into nodes vector
+    return nodes.size() + pis.size() - 1;
   }
 
   Pi& pi_at(signal index) {
@@ -174,6 +207,12 @@ public:
     return nodes[index - pis.size()];
   }
 
+  Edge& edge_at(signal index) {
+    if (index >= (edges.size()))
+      throw std::out_of_range("Index out of range");
+    return edges[index];
+  }
+
   // Function to get the level of an index
   signal get_level(signal index) {
     if(is_pi(index)) {
@@ -182,6 +221,46 @@ public:
       return nodes[index - pis.size()].level;
     }
     throw std::out_of_range("Index out of range");
+  }
+
+  void recompute_node_function( signal node )
+  {
+    Node& n = node_at(node);
+      std::visit(
+        overloaded {
+            [this, &n](EnumerationNetwork::binary_t& func) {
+              /*n.output_function = func(
+              n.fanin_edge[0].inv ? ~GetTruthTableOfFanin(n.fanin_node[0]) : GetTruthTableOfFanin(n.fanin_node[0]),
+                  n.fanin_edge[1].inv ? ~GetTruthTableOfFanin(n.fanin_node[1]) : GetTruthTableOfFanin(n.fanin_node[1])
+                  );*/
+              n.output_function = func(GetTruthTableOfFanin(n.fanin_node[0]), GetTruthTableOfFanin(n.fanin_node[1]));
+            },
+            [this, &n](EnumerationNetwork::ternary_t& func) {
+              n.output_function = func(GetTruthTableOfFanin(n.fanin_node[0]), GetTruthTableOfFanin(n.fanin_node[1]), GetTruthTableOfFanin(n.fanin_node[2]));
+            }
+        },
+        n.operation // This should be an instance of either binary_t or ternary_t
+    );
+  }
+
+  void recompute_node_functions(){
+    foreach_node([this] (const auto n)
+    {
+      recompute_node_function( n );
+    });
+  }
+
+  template<typename Fn>
+  void foreach_node(Fn&& fn) const {
+    auto start_index = pis.size();
+    auto r = mockturtle::range<uint64_t>( start_index, nodes.size() + start_index );
+    mockturtle::detail::foreach_element( r.begin(), r.end(), fn );
+  }
+
+  template<typename Fn>
+  void foreach_edge(Fn&& fn) const {
+    auto r = mockturtle::range<uint64_t>( edges.size() );
+    mockturtle::detail::foreach_element( r.begin(), r.end(), fn );
   }
 
   // Modify Node Function
@@ -195,6 +274,10 @@ public:
 
   [[nodiscard]]  bool is_node(signal index) const {
     return index >= pis.size() && index < (pis.size() + nodes.size());
+  }
+
+  int num_fis(const Node& node) {
+    return node.is_binary ? 2 : 3;
   }
 };
 
@@ -234,9 +317,12 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 {
   using namespace mockturtle;
   EnumerationNetwork enum_ntk;
+  /*enum_ntk.pis.reserve(numInputs);
+  enum_ntk.nodes.reserve(20);
+  enum_ntk.edges.reserve(40);*/
   enum_ntk.create_pis( numInputs );
 
-  std::visit(
+  /*std::visit(
       overloaded {
           [&enum_ntk](EnumerationNetwork::binary_t& func) {
             enum_ntk.create_node(std::move(func), 0, 1);
@@ -246,23 +332,80 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
           }
       },
       operations[0] // This should be an instance of either binary_t or ternary_t
-  );
-  int numNodes = enum_ntk.nodes.size();
-  kitty::dynamic_truth_table xor_o(2);
-  create_from_binary_string( xor_o, "0110" );
-  kitty::print_binary( xor_o );
+  );*/
+
+  int n0 = enum_ntk.create_node(operations[0], 0, 1);
+  int n1 = enum_ntk.create_node(operations[0], 1, 2);
+  std::cout << "n" << enum_ntk.node_at(n0).index << std::endl;
+  std::cout << "n" << enum_ntk.node_at(n1).index << std::endl;
+  std::cout << "fi" << enum_ntk.node_at(n0).fanin_edge[0] << std::endl;
+  std::cout << "fi" << enum_ntk.node_at(n1).fanin_edge[0] << std::endl;
+
+  // Recompute the Boolean function of the Network
+  enum_ntk.recompute_node_functions();
+
+  // Compute all COmbinations for inverted edges
+  int edge_invs = 0;
+  for (int j = 0; j < (1 << enum_ntk.edges.size()); ++j)
+  {
+    edge_invs = j;
+    size_t i = 0;
+    std::cout << std::bitset<sizeof(int)>(j) << std::endl;
+    enum_ntk.foreach_edge([&, i](auto const& e) mutable {
+      bool inv_value = (edge_invs & (1 << i)) != 0;
+      enum_ntk.edge_at(e).inv = inv_value;
+      ++i;
+    });
+    break;
+  }
+  printf("Edge Combinations: %i\n", edge_invs);
+
+  printf("\nEdges: ");
+  enum_ntk.foreach_edge([&]( auto const& e ) {
+    printf("%ld ", e);
+  });
+
+  // Vektor mit allen kombinatorischen Möglichkeiten für Knoten - Funktionen.
+  // Enthält Einträge Größe N = Anzahl der Knoten im Netzwerk
+  // Jeder Eintrag enthält eine Kombination an Funktionen. DIese werden dann mit foreach_node zugewiesen.
+
+  // Vektor mit allen kombinatorischen Möglichkeiten an Inverted Edges.
+  // Enthält Einträge Größe E = Anzahl der Kanten im Netzwerk
+  // Jeder Eintrag enthält eine Kombination an invertierten endges.
+
+  // Edges einführen mit source und destination und inverted flag.
+  // Berechnung der node Funktion abhängig von den edges machen.
+  // Funktion update_node_functions. Berechnet alle node Funktionen neu.
+
+  // for each network
+  //     for each combination of nodes
+  //         for each combination of inverted edges
+
+  /*for ( int i = 0; i < enum_ntk.num_fis(enum_ntk.node_at(3)); ++i )
+  {
+    continue;
+  }*/
+
   printf("\n1: ");
   kitty::print_binary( enum_ntk.pi_at(0).tt );
   printf("\n2: ");
   kitty::print_binary( enum_ntk.pi_at(1).tt );
   printf("\n3: ");
-  kitty::print_binary( enum_ntk.node_at(2).output_function );
+  kitty::print_binary( enum_ntk.pi_at(2).tt );
+  enum_ntk.foreach_node([&]( auto const& n ) {
+    printf("\n%ld: ", n);
+    kitty::print_binary( enum_ntk.node_at(n).output_function );
+  });
+  enum_ntk.foreach_node([&]( auto const& n ) {
+    printf("\n%ld: ", n);
+    kitty::print_binary( enum_ntk.node_at(n).output_function );
+  });
 }
 
 int main()
 {
   using TT = kitty::dynamic_truth_table;
-  static constexpr uint32_t K = 2u;
+  static constexpr uint32_t K = 3u;
 
   std::vector<TT> xs;
   for( int i{0}; i<K; ++i )
