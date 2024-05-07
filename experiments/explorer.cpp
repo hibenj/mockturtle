@@ -196,7 +196,7 @@ int main( int argc, char* argv[] )
     //if ( benchmark == "hyp" && argc == 1 ) continue;
     fmt::print( "[i] processing {}\n", benchmark );
 
-    using Ntk = mig_network;
+    using Ntk = aig_network;
     Ntk ntk;
     if ( lorina::read_aiger( benchmark_path( benchmark ), aiger_reader( ntk ) ) != lorina::return_code::success )
     {
@@ -213,13 +213,21 @@ int main( int argc, char* argv[] )
     ps.verbose = true;
     //ps.very_verbose = true;
 
-    stopwatch<>::duration rt{0};
-    Ntk opt = call_with_stopwatch( rt, [&](){ return deepsyn_mig_v1( ntk, ps ); } );
-    //write_verilog( opt, "best_MIGs/" + benchmark + ".v" );
-    bool const cec = ( benchmark == "hyp" ) ? true : abc_cec_impl( opt, benchmark_path( benchmark ) );
-    depth_view d( opt );
+    xag_network xag = aig_to_xag(ntk);
+    std::string script = "&ps";
+    // aig_network opt = call_abc_script( ntk, script );
+    xag_network opt = call_abc_script_xag( xag, script );
 
-    exp( benchmark, ntk.num_gates(), opt.num_gates(), d.depth(), to_seconds(rt), cec );
+    stopwatch<>::duration rt{0};
+    // Ntk opt = call_with_stopwatch( rt, [&](){ return deepsyn_mig_v1( ntk, ps ); } );
+    //write_verilog( opt, "best_MIGs/" + benchmark + ".v" );
+    // bool const cec = ( benchmark == "hyp" ) ? true : abc_cec_impl( opt, benchmark_path( benchmark ) );
+    mockturtle::equivalence_checking_stats st;
+    bool cec = *mockturtle::equivalence_checking( *mockturtle::miter<aig_network>( xag, opt ), {}, &st );
+    depth_view d( ntk );
+
+    exp( benchmark, xag.num_gates(), opt.num_gates(), d.depth(), to_seconds(rt), cec );
+    break;
   }
 
   exp.save();

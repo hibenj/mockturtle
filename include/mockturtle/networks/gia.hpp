@@ -20,6 +20,7 @@ namespace abc {
   extern int         Gia_ManAppendCi(Gia_Man_t * p);
   extern int         Gia_ManAppendCo(Gia_Man_t * p, int iLit0);
   extern int         Gia_ManAppendAnd2(Gia_Man_t * p, int iLit0, int iLit1);
+  extern int         Gia_ManAppendXor2(Gia_Man_t * p, int iLit0, int iLit1);
   extern Gia_Obj_t * Gia_ManObj(Gia_Man_t * p, int v);
   extern int         Gia_ObjIsPi(Gia_Man_t * p, Gia_Obj_t * pObj);
   extern int         Gia_ObjIsAnd(Gia_Obj_t * pObj);
@@ -114,6 +115,10 @@ public:
   
   signal create_and(const signal& f, const signal& g) {
     return signal(abc::Gia_ManObj(gia_, abc::Abc_Lit2Var(abc::Gia_ManAppendAnd2(gia_, abc::Gia_Obj2Lit(gia_, f.obj()), abc::Gia_Obj2Lit(gia_, g.obj())))));
+  }
+
+  signal create_xor(const signal& f, const signal& g) {
+    return signal(abc::Gia_ManObj(gia_, abc::Abc_Lit2Var(abc::Gia_ManAppendXor2(gia_, abc::Gia_Obj2Lit(gia_, f.obj()), abc::Gia_Obj2Lit(gia_, g.obj())))));
   }
 
   bool is_constant(node n) const {

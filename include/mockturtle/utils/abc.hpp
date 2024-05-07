@@ -113,6 +113,104 @@ aig_network call_abc_script( aig_network const& aig, std::string const& script )
   return new_aig;
 }
 
+xag_network aig_to_xag(aig_network aig)
+{
+  using resyn_fn = xag_npn_resynthesis<xag_network>;
+
+  resyn_fn                   resyn;
+  exact_library<xag_network> lib(resyn);
+
+  map_params  ps;
+  map_stats   st;
+  xag_network res = map(aig, lib, ps, &st);
+
+  return res;
+}
+
+void xag_to_gia(gia_network &gia, xag_network xag) {
+  using xag_node = xag_network::node;
+  using xag_signal = xag_network::signal;
+
+  std::vector<gia_signal> a_to_g(xag.size());
+
+  /* constant */
+  a_to_g[0] = gia.get_constant(false);
+
+  /* pis */
+  xag.foreach_pi([&](xag_node n) {
+    a_to_g[n] = gia.create_pi();
+  });
+
+  /* ands */
+  xag.foreach_gate([&](xag_node n){
+    std::array<gia_signal, 2u> fis;
+    if ( xag.is_xor( n ) )
+    {
+      xag.foreach_fanin(n, [&](xag_signal fi, int index){
+        fis[index] = xag.is_complemented(fi) ? !a_to_g[xag.get_node(fi)] : a_to_g[xag.get_node(fi)];
+      });
+      a_to_g[n] = gia.create_and(fis[0], fis[1]);
+    }
+    else
+    {
+      xag.foreach_fanin(n, [&](xag_signal fi, int index){
+        fis[index] = xag.is_complemented(fi) ? !a_to_g[xag.get_node(fi)] : a_to_g[xag.get_node(fi)];
+      });
+      a_to_g[n] = gia.create_and(fis[0], fis[1]);
+    }
+  });
+
+  /* pos */
+  xag.foreach_po([&](xag_signal f){
+    gia.create_po(xag.is_complemented(f) ? !a_to_g[xag.get_node(f)] : a_to_g[xag.get_node(f)]);
+  });
+}
+
+void gia_to_xag(xag_network xag, const gia_network &gia) {
+  using gia_node = gia_network::node;
+  using gia_signal = gia_network::signal;
+
+  std::vector<xag_network::signal> g_to_a(gia.size());
+
+  /* constant */
+  g_to_a[0] = xag.get_constant(false);
+
+  /* pis */
+  gia.foreach_pi([&](gia_network::node n){
+    g_to_a[n] = xag.create_pi();
+  });
+
+  /* ands */
+  gia.foreach_gate([&](gia_network::node n){
+    std::array<xag_network::signal, 2u> fis;
+    gia.foreach_fanin(n, [&](gia_signal fi, int index){
+      fis[index] = gia.is_complemented(fi) ? !g_to_a[gia.get_node(fi)] : g_to_a[gia.get_node(fi)];
+    });
+
+    g_to_a[n] = xag.create_and(fis[0], fis[1]);
+  });
+
+  /* pos */
+  gia.foreach_po([&](gia_network::signal f){
+    xag.create_po(gia.is_complemented(f) ? !g_to_a[gia.get_node(f)] : g_to_a[gia.get_node(f)]);
+  });
+}
+
+xag_network call_abc_script_xag( xag_network const& xag, std::string const& script )
+{
+  gia_network gia( xag.size() << 1 );
+  xag_to_gia( gia, xag );
+
+  gia.load_rc();
+  gia.run_opt_script( script );
+
+  xag_network new_xag;
+  gia_to_xag( new_xag, gia );
+
+  new_xag = cleanup_dangling( new_xag );
+  return new_xag;
+}
+
 }
 
 #endif
