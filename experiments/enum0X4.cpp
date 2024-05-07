@@ -350,7 +350,7 @@ void generate_combinations(std::vector<std::vector<uint64_t>>& input, std::vecto
   }
 }
 
-void processNodes( std::vector<EnumNtk>Networks, std::vector<uint64_t> start_nodes, EnumNtk enum_ntk, uint64_t cur_lvl, std::vector<EnumNtk::operation_t>& operations )
+void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_nodes, EnumNtk enum_ntk, uint64_t cur_lvl, std::vector<EnumNtk::operation_t>& operations )
 {
   std::cout << "Called with: " << cur_lvl << std::endl;
   // Debug output
@@ -415,48 +415,48 @@ void processNodes( std::vector<EnumNtk>Networks, std::vector<uint64_t> start_nod
     std::cout << ")" << std::endl;
   }
   // Code
+  std::vector<EnumNtk::signal> delete_nodes;
   for( const auto& combination : output ) { // For each combination
+    auto current_nodes = start_nodes;
+    auto current_ntk = enum_ntk;
     for( const auto& pair : combination ) { // For each pair in the combination
       if ( pair.size() == 2 ) { // For each value in the pair
-        EnumNtk::signal new_node = enum_ntk.create_node( operations[0], pair[0], pair[1] );
+        EnumNtk::signal new_node = current_ntk.create_node( operations[0], pair[0], pair[1] );
         std::cout << "Node created with fis: " << pair[0] << pair[1] << std::endl;
         // Replace pair[0] and pair[1] with new_node in start_nodes
-        auto it1 = std::find(start_nodes.begin(), start_nodes.end(), pair[0]);
-        auto it2 = std::find(start_nodes.begin(), start_nodes.end(), pair[1]);
+        auto it1 = std::find(current_nodes.begin(), current_nodes.end(), pair[0]);
+        auto it2 = std::find(current_nodes.begin(), current_nodes.end(), pair[1]);
 
-        if (it1 != start_nodes.end() && it2 != start_nodes.end()) {
+        if (it1 != current_nodes.end() && it2 != current_nodes.end()) {
+          // If it1 is already in delete_nodes, remove it from delete_nodes
+          auto new_end = std::remove_if(delete_nodes.begin(), delete_nodes.end(),
+                                         [&](const EnumNtk::signal &node) { return node == *it1; });
+          delete_nodes.erase(new_end, delete_nodes.end());
           *it1 = new_node;
-          start_nodes.erase(it2);
-        }
-        printf("\nNodes for new iteration: ");
-        for(const auto &val : start_nodes) {
-          std::cout << val << " ";
-        }
-        if ( start_nodes.size() == 1 )
-        {
-          Networks.push_back( enum_ntk );
-          std::cout << "\nNetwork added" << std::endl;
-        }
-        processNodes( Networks, start_nodes, enum_ntk, ++cur_lvl, operations );
-      }
-      else
-      {
-        assert( pair.size() == 3 );
-        EnumNtk::signal new_node = enum_ntk.create_node( operations[0], pair[0], pair[1], pair[2] );
-        std::cout << "Node created with fis: " << pair[0] << pair[1] << pair[2] << std::endl;
-        // Replace pair[0] and pair[1] with new_node in start_nodes
-        auto it1 = std::find(start_nodes.begin(), start_nodes.end(), pair[0]);
-        auto it2 = std::find(start_nodes.begin(), start_nodes.end(), pair[1]);
-        auto it3 = std::find(start_nodes.begin(), start_nodes.end(), pair[2]);
-
-        if (it1 != start_nodes.end() && it2 != start_nodes.end()) {
-          *it1 = new_node;
-          start_nodes.erase(it2);
-          start_nodes.erase(it3);
+          // Add it2 into delete_nodes
+          delete_nodes.push_back(*it2);
         }
       }
     }
-    break;
+    for(auto& delete_node: delete_nodes) {
+      auto new_end = std::remove_if(current_nodes.begin(), current_nodes.end(),
+                                     [&](const EnumNtk::signal &current_node) { return current_node == delete_node; });
+      current_nodes.erase(new_end, current_nodes.end());
+    }
+    delete_nodes.clear();
+
+    printf("\nNodes for new iteration: ");
+    for(const auto &val : current_nodes) {
+      std::cout << val << " ";
+    }
+    printf("\n");
+    if ( current_nodes.size() == 1 )
+    {
+      Networks.push_back( enum_ntk );
+      std::cout << "\nNetwork added" << std::endl;
+    }
+    // processNodes( Networks, start_nodes, enum_ntk, ++cur_lvl, operations );
+    // break;
   }
 }
 
@@ -487,14 +487,22 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 
   processNodes( Networks, start_nodes, enum_ntk, cur_lvl, operations );
 
-  enum_ntk.foreach_pi([&]( auto const& n ) {
-    printf("\n%ld: ", n);
-    kitty::print_binary( enum_ntk.pi_at(n).tt );
-  });
-  enum_ntk.foreach_node([&]( auto const& n ) {
-    printf("\n%ld: ", n);
-    kitty::print_binary( enum_ntk.node_at(n).output_function );
-  });
+  printf("Networks size %ld \n", Networks.size());
+
+  if( !Networks.empty() )
+  {
+    EnumNtk final = Networks[0];
+    printf("Pis");
+    final.foreach_pi([&]( auto const& n ) {
+      printf("\n%ld: ", n);
+      kitty::print_binary( final.pi_at(n).tt );
+    });
+    printf("\nNodes");
+    final.foreach_node([&]( auto const& n ) {
+      printf("\n%ld: ", n);
+      kitty::print_binary( final.node_at(n).output_function );
+    });
+  }
 
   // Compute all Combinations for inverted edges
   /*int edge_invs = 0;
@@ -592,6 +600,7 @@ int main()
   std::vector<EnumNtk::operation_t> operations;
   EnumNtk::binary_t binary_and_func = [](const auto& a, const auto& b){ return kitty::binary_and(a, b); };
   EnumNtk::binary_t binary_or_func = [](const auto& a, const auto& b){ return kitty::binary_or(a, b); };
+  EnumNtk::binary_t binary_xor_func = [](const auto& a, const auto& b){ return kitty::binary_xor(a, b); };
   EnumNtk::ternary_t ternary_maj_func = [](const auto& a, const auto& b, const auto& c){ return kitty::ternary_majority(a, b, c); };
   operations.push_back(binary_and_func);
 
