@@ -191,17 +191,17 @@ public:
   }
 
   // For binary operation
-  void assign_node_operation(Node& new_node, binary_t& operation, const signal fi0, const signal fi1, size_t fanin_size)
+  void assign_node_operation_binary(Node& node, binary_t& operation)
   {
-    assert(fanin_size == 2);
-    new_node.output_function = operation(GetTruthTableOfFanin(fi0), GetTruthTableOfFanin(fi1));
+    node.operation = operation;
+    node.output_function = operation(GetTruthTableOfFanin(node.fanin_node[0]), GetTruthTableOfFanin(node.fanin_node[1]));
   }
 
   // For ternary operation
-  void assign_node_operation(Node& new_node, ternary_t& operation, const signal fi0, const signal fi1, const signal fi2, size_t fanin_size)
+  void assign_node_operation_ternary(Node& node, ternary_t& operation)
   {
-    assert(fanin_size == 3);
-    new_node.output_function = operation(GetTruthTableOfFanin(fi0), GetTruthTableOfFanin(fi1), GetTruthTableOfFanin(fi2));
+    node.operation = operation;
+    node.output_function = operation(GetTruthTableOfFanin(node.fanin_node[0]), GetTruthTableOfFanin(node.fanin_node[1]), GetTruthTableOfFanin(node.fanin_node[2]));
   }
 
   Pi& pi_at(signal index) {
@@ -338,34 +338,50 @@ void try_function( std::unordered_set<TT, kitty::hash<TT>> & classes, TT tt )
 }
 
 // Recursive function to generate combinations
-void generate_combinations(std::vector<std::vector<uint64_t>>& input, std::vector<std::vector<std::vector<uint64_t>>>& output, std::vector<std::vector<uint64_t>> temp, int index)
+void generate_combinations(std::vector<std::vector<uint64_t>>& input,
+                            std::vector<std::vector<std::vector<uint64_t>>>& output,
+                            std::vector<std::vector<uint64_t>> temp,
+                            std::vector<uint64_t> start_nodes, int index)
 {
   if(!temp.empty()) {
     output.push_back(temp);
   }
   for(size_t i = index; i < input.size(); ++i) {
-    temp.push_back(input[i]);
-    generate_combinations(input, output, temp, static_cast<int>(i) + 1);
-    temp.pop_back();
+    auto input_iter = std::find(start_nodes.begin(), start_nodes.end(), input[i].front());
+    if (temp.empty() || input_iter >= std::find(start_nodes.begin(), start_nodes.end(), temp.back().back())){
+      temp.push_back(input[i]);
+      generate_combinations(input, output, temp, start_nodes, static_cast<int>(i) + 1);
+      temp.pop_back();
+    }
   }
 }
 
-void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_nodes, EnumNtk enum_ntk, uint64_t cur_lvl, std::vector<EnumNtk::operation_t>& operations )
+void compute_network_structures( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_nodes, EnumNtk enum_ntk, int cur_lvl, std::vector<EnumNtk::operation_t>& operations )
 {
-  std::cout << "Called with: " << cur_lvl << std::endl;
+  // Code
+  ++cur_lvl;
   // Debug output
+  std::cout << "Called with: " << cur_lvl << std::endl;
   printf("\nPis: ");
   for(const auto &val : start_nodes) {
     std::cout << val << " ";
   }
   printf("\n");
   // Code
+  // create all three input adjacent nodes
   std::vector<std::vector<uint64_t>> adjacent_nodes;
-  for ( size_t i = 0; i < start_nodes.size() - 1; ++i ) {
-    std::vector<uint64_t> temp = { start_nodes[i], start_nodes[i + 1] };
-    adjacent_nodes.push_back( temp );
+  // Create all two and three input adjacent nodes
+  for (size_t i = 0; i < start_nodes.size() - 1; ++i) {
+    std::vector<uint64_t> temp_2 = { start_nodes[i], start_nodes[i + 1] };
+    adjacent_nodes.push_back(temp_2);
+    if( i < start_nodes.size() - 2 )
+    {
+      std::vector<uint64_t> temp_3 = { start_nodes[i], start_nodes[i + 1], start_nodes[i + 2] };
+      adjacent_nodes.push_back(temp_3);
+    }
   }
   // Debug output
+  printf("Before erasing\n");
   for( const auto &innerVec : adjacent_nodes ) {
     std::cout << "(";
     for( const auto &val : innerVec ) {
@@ -392,6 +408,7 @@ void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_n
                                         } ),
                         adjacent_nodes.end() );
   // Debug output
+  printf("After erasing\n");
   for( const auto &innerVec : adjacent_nodes ) {
     std::cout << "(";
     for( const auto &val : innerVec ) {
@@ -401,7 +418,7 @@ void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_n
   }
   // Code
   std::vector<std::vector<std::vector<uint64_t>>> output;
-  generate_combinations(adjacent_nodes, output, {}, 0);
+  generate_combinations(adjacent_nodes, output, {}, start_nodes, 0);
   // Debug output
   for(const auto& combination : output) { // For each combination
     std::cout << "( ";
@@ -421,7 +438,7 @@ void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_n
     auto current_ntk = enum_ntk;
     for( const auto& pair : combination ) { // For each pair in the combination
       if ( pair.size() == 2 ) { // For each value in the pair
-        EnumNtk::signal new_node = current_ntk.create_node( operations[0], pair[0], pair[1] );
+        EnumNtk::signal new_node = current_ntk.create_node( operations[1], pair[0], pair[1] );
         std::cout << "Node created with fis: " << pair[0] << pair[1] << std::endl;
         // Replace pair[0] and pair[1] with new_node in start_nodes
         auto it1 = std::find(current_nodes.begin(), current_nodes.end(), pair[0]);
@@ -437,6 +454,28 @@ void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_n
           delete_nodes.push_back(*it2);
         }
       }
+      else if ( pair.size() == 3 )
+      {
+        EnumNtk::signal new_node = current_ntk.create_node( operations[0], pair[0], pair[1], pair[2] );
+        std::cout << "Node created with fis: " << pair[0] << pair[1] << pair[2] << std::endl;
+        // Replace pair[0] and pair[1] with new_node in start_nodes
+        auto it1 = std::find(current_nodes.begin(), current_nodes.end(), pair[0]);
+        auto it2 = std::find(current_nodes.begin(), current_nodes.end(), pair[1]);
+        auto it3 = std::find(current_nodes.begin(), current_nodes.end(), pair[2]);
+
+        if (it1 != current_nodes.end() && it2 != current_nodes.end()) {
+          // If it1 is already in delete_nodes, remove it from delete_nodes
+          auto new_end = std::remove_if(delete_nodes.begin(), delete_nodes.end(),
+                                         [&](const EnumNtk::signal &node) { return node == *it1; });
+          delete_nodes.erase(new_end, delete_nodes.end());
+          *it1 = new_node;
+          // Add it2 into delete_nodes
+          delete_nodes.push_back(*it2);
+          delete_nodes.push_back(*it3);
+        }
+      }
+      else
+        throw std::runtime_error( "Not allowed pair size" );
     }
     for(auto& delete_node: delete_nodes) {
       auto new_end = std::remove_if(current_nodes.begin(), current_nodes.end(),
@@ -444,18 +483,19 @@ void processNodes( std::vector<EnumNtk>& Networks, std::vector<uint64_t> start_n
       current_nodes.erase(new_end, current_nodes.end());
     }
     delete_nodes.clear();
-
+    //Debug
     printf("\nNodes for new iteration: ");
     for(const auto &val : current_nodes) {
       std::cout << val << " ";
     }
     printf("\n");
+    //Code
     if ( current_nodes.size() == 1 )
     {
-      Networks.push_back( enum_ntk );
+      Networks.push_back( current_ntk );
       std::cout << "\nNetwork added" << std::endl;
     }
-    // processNodes( Networks, start_nodes, enum_ntk, ++cur_lvl, operations );
+    compute_network_structures( Networks, current_nodes, current_ntk, cur_lvl, operations );
     // break;
   }
 }
@@ -479,30 +519,85 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
   // for each entry in this vector again create the same vectors and so on
 
   // Code: create start_nodes vector
-  uint64_t cur_lvl = 0;
+  int cur_lvl = -1;
   std::vector<uint64_t> start_nodes;
   enum_ntk.foreach_pi( [&]( auto const& pi ) {
     start_nodes.push_back( pi );
   });
 
-  processNodes( Networks, start_nodes, enum_ntk, cur_lvl, operations );
+  compute_network_structures( Networks, start_nodes, enum_ntk, cur_lvl, operations );
 
   printf("Networks size %ld \n", Networks.size());
 
   if( !Networks.empty() )
   {
-    EnumNtk final = Networks[0];
-    printf("Pis");
-    final.foreach_pi([&]( auto const& n ) {
-      printf("\n%ld: ", n);
-      kitty::print_binary( final.pi_at(n).tt );
-    });
-    printf("\nNodes");
-    final.foreach_node([&]( auto const& n ) {
-      printf("\n%ld: ", n);
-      kitty::print_binary( final.node_at(n).output_function );
-    });
+    auto pntk = Networks[0];
+    printf("\nPis");
+    pntk.foreach_pi([&](auto const &n)
+                      {
+                        printf("\n%ld: ", n);
+                        kitty::print_binary(pntk.pi_at(n).tt);
+                      });
+
+    pntk.foreach_node([&](auto const &n)
+                       {
+                         printf("\n%ld: ", n);
+                         kitty::print_binary(pntk.node_at(n).output_function);
+                       });
+
+    int binaryNodeCount = std::count_if(pntk.nodes.begin(), pntk.nodes.end(), [](const auto& n) { return n.is_binary; });
+    int combinationCount = std::pow(2, binaryNodeCount);
+    for(int combination = 0; combination < combinationCount; ++combination){
+      int idx = 0;
+      for(auto &n: pntk.nodes){  //Iterating through nodes
+        if (n.is_binary){
+          int operationIdx = 1 + ((combination >> idx) & 1);
+          pntk.assign_node_operation_binary(n, std::get<0>(operations[operationIdx]));
+          idx++;
+        }
+      }
+      // pntk.recompute_node_functions();
+
+      printf("\n");
+      kitty::print_binary( (pntk.nodes.back().output_function ) );
+    }
+
+    /*for(auto &network: Networks){
+      int binaryNodeCount = std::count_if(network.nodes.begin(), network.nodes.end(), [](const auto& n) { return n.is_binary; });
+      int combinationCount = std::pow(2, binaryNodeCount);
+      for(int combination = 0; combination < combinationCount; ++combination){
+        int idx = 0;
+        for(auto &n: network.nodes){  //Iterating through nodes
+          if (n.is_binary){
+            int operationIdx = 1 + ((combination >> idx) & 1);
+            network.assign_node_operation_binary(n, std::get<0>(operations[operationIdx]));
+            idx++;
+          }
+        }
+        printf("\n");
+        kitty::print_binary( (network.nodes.back().output_function ) );
+      }
+    }*/
   }
+  else
+    printf("No Networks created");
+
+  /*for(auto &final: Networks)
+   {
+     printf("\nfinal %i", final.num_nodes());
+     printf("\nPis");
+     final.foreach_pi([&](auto const &n)
+                       {
+                         printf("\n%ld: ", n);
+                         kitty::print_binary(final.pi_at(n).tt);
+                       });
+     printf("\nNodes");
+     final.foreach_node([&](auto const &n)
+                         {
+                           printf("\n%ld: ", n);
+                           kitty::print_binary(final.node_at(n).output_function);
+                         });
+   }*/
 
   // Compute all Combinations for inverted edges
   /*int edge_invs = 0;
@@ -599,10 +694,12 @@ int main()
   // Specify the functions used
   std::vector<EnumNtk::operation_t> operations;
   EnumNtk::binary_t binary_and_func = [](const auto& a, const auto& b){ return kitty::binary_and(a, b); };
-  EnumNtk::binary_t binary_or_func = [](const auto& a, const auto& b){ return kitty::binary_or(a, b); };
+  // EnumNtk::binary_t binary_or_func = [](const auto& a, const auto& b){ return kitty::binary_or(a, b); };
   EnumNtk::binary_t binary_xor_func = [](const auto& a, const auto& b){ return kitty::binary_xor(a, b); };
   EnumNtk::ternary_t ternary_maj_func = [](const auto& a, const auto& b, const auto& c){ return kitty::ternary_majority(a, b, c); };
+  operations.push_back(ternary_maj_func);
   operations.push_back(binary_and_func);
+  operations.push_back(binary_xor_func);
 
   create_and_try_functions( classes, xs, K, operations );
 
