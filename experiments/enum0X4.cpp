@@ -526,12 +526,12 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 
   compute_network_structures( Networks, start_nodes, enum_ntk, cur_lvl, operations );
 
-  printf("Networks size %ld \n", Networks.size());
+  // printf("Networks size %ld \n", Networks.size());
 
   if( !Networks.empty() )
   {
     // Test code for one network
-    auto pntk = Networks[0];
+    /*auto pntk = Networks[0];
     printf("\nPis");
     pntk.foreach_pi([&](auto const &n)
                       {
@@ -580,12 +580,14 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 
       printf("\n");
       kitty::print_binary( (pntk.nodes.back().output_function ) );
-    }
+    }*/
     // This is the real code
-    /*for(auto &network: Networks){
+    for(auto &network: Networks)
+    {
       int binaryNodeCount = std::count_if(network.nodes.begin(), network.nodes.end(), [](const auto& n) { return n.is_binary; });
       int combinationCount = std::pow(2, binaryNodeCount);
-      for(int combination = 0; combination < combinationCount; ++combination){
+      for(int combination = 0; combination < combinationCount; ++combination)
+      {
         int idx = 0;
         for(auto &n: network.nodes){  //Iterating through nodes
           if (n.is_binary){
@@ -594,92 +596,25 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
             idx++;
           }
         }
-        printf("\n");
-        kitty::print_binary( (network.nodes.back().output_function ) );
+        int edge_invs = 0;
+        for (int j = 0; j < (1 << network.edges.size()); ++j)
+        {
+          edge_invs = j;
+          size_t i = 0;
+          network.foreach_edge([&, i](auto const& e) mutable {
+            bool inv_value = (edge_invs & (1 << i)) != 0;
+            network.edge_at(e).inv = inv_value;
+            ++i;
+          });
+          network.recompute_node_functions();
+          EnumNtk::TruthTable final_tt = network.get_ntk_fct();
+          update_classes(classes, final_tt);
+        }
       }
-    }*/
+    }
   }
   else
     printf("No Networks created");
-
-  /*for(auto &final: Networks)
-   {
-     printf("\nfinal %i", final.num_nodes());
-     printf("\nPis");
-     final.foreach_pi([&](auto const &n)
-                       {
-                         printf("\n%ld: ", n);
-                         kitty::print_binary(final.pi_at(n).tt);
-                       });
-     printf("\nNodes");
-     final.foreach_node([&](auto const &n)
-                         {
-                           printf("\n%ld: ", n);
-                           kitty::print_binary(final.node_at(n).output_function);
-                         });
-   }*/
-
-  // Compute all Combinations for inverted edges
-  /*int edge_invs = 0;
-  for (int j = 0; j < (1 << enum_ntk.edges.size()); ++j)
-  {
-    edge_invs = j;
-    size_t i = 0;
-    std::cout << std::bitset<sizeof(int)>(j) << std::endl;
-    enum_ntk.foreach_edge([&, i](auto const& e) mutable {
-      bool inv_value = (edge_invs & (1 << i)) != 0;
-      enum_ntk.edge_at(e).inv = inv_value;
-      ++i;
-    });
-    if ( j == 1 )
-    {
-      break;
-    }
-  }
-  printf("Edge Combinations: %i\n", edge_invs);*/
-
-  /*printf("\nEdges: ");
-  enum_ntk.foreach_edge([&]( auto const& e ) {
-    printf("%ld ", e);
-  });*/
-
-  // Vektor mit allen kombinatorischen Möglichkeiten für Knoten - Funktionen.
-  // Enthält Einträge Größe N = Anzahl der Knoten im Netzwerk
-  // Jeder Eintrag enthält eine Kombination an Funktionen. DIese werden dann mit foreach_node zugewiesen.
-
-  // Vektor mit allen kombinatorischen Möglichkeiten an Inverted Edges.
-  // Enthält Einträge Größe E = Anzahl der Kanten im Netzwerk
-  // Jeder Eintrag enthält eine Kombination an invertierten endges.
-
-  // Edges einführen mit source und destination und inverted flag.
-  // Berechnung der node Funktion abhängig von den edges machen.
-  // Funktion update_node_functions. Berechnet alle node Funktionen neu.
-
-  // for each network
-  //     for each combination of nodes
-  //         for each combination of inverted edges
-
-  /*for ( int i = 0; i < enum_ntk.num_fis(enum_ntk.node_at(3)); ++i )
-  {
-    continue;
-  }*/
-
-  /*printf("\n0: ");
-  kitty::print_binary( enum_ntk.pi_at(0).tt );
-  printf("\n1: ");
-  kitty::print_binary( enum_ntk.pi_at(1).tt );
-  printf("\n2: ");
-  kitty::print_binary( enum_ntk.pi_at(2).tt );
-  enum_ntk.foreach_node([&]( auto const& n ) {
-    printf("\n%ld: ", n);
-    kitty::print_binary( enum_ntk.node_at(n).output_function );
-  });
-  // Recompute the Boolean function of the Network
-  enum_ntk.recompute_node_functions();
-  enum_ntk.foreach_node([&]( auto const& n ) {
-    printf("\n%ld: ", n);
-    kitty::print_binary( enum_ntk.node_at(n).output_function );
-  });*/
 }
 
 int main()
@@ -687,26 +622,30 @@ int main()
   using TT = kitty::dynamic_truth_table;
   static constexpr uint32_t K = 3u;
 
-  std::vector<TT> xs;
-  for( int i{0}; i<K; ++i )
-  {
-    xs.emplace_back( K );
-    kitty::create_nth_var( xs[i], i );
-  }
-
   /* enumerate the npn classes */
   int f_count{0};
   using tt_hash = kitty::hash<TT>;
   std::unordered_set<TT, tt_hash> classes;
   TT tt(K);
   // This part is needed. Needs some computation time for 4 inputs though
-  /*do
+  do
   {
     const auto res = kitty::exact_npn_canonization( tt );
     classes.insert( std::get<0>( res ) );
     kitty::next_inplace( tt );
     ++f_count;
-  } while ( !kitty::is_const0( tt ) );*/
+  } while ( !kitty::is_const0( tt ) );
+
+  // trivial cases
+  kitty::dynamic_truth_table tt_zeros(K);
+  update_classes(classes, tt_zeros);
+  std::vector<TT> xs;
+  for( int i{0}; i<K; ++i )
+  {
+    xs.emplace_back( K );
+    kitty::create_nth_var( xs[i], i );
+    update_classes(classes, xs[i]);
+  }
 
   printf("fct_count: %i\n", f_count);
   printf("npn_count: %i\n", classes.size());
@@ -721,15 +660,19 @@ int main()
   operations.push_back(binary_and_func);
   operations.push_back(binary_xor_func);
 
+  std::size_t size_before = classes.size();
   create_and_try_functions( classes, xs, K, operations );
+  std::size_t size_after = classes.size();
 
-  /*printf("\n");
+  printf("\n");
   printf("NOT CROSSING FREE\n");
   for( auto const& tt : classes )
   {
     kitty::print_binary( tt );
     printf("\n");
-  }*/
+  }
+  printf("\nNum Classes before: %zu", size_before);
+  printf("\nNum Classes after: %zu", size_after);
 
   return 0;
 }
