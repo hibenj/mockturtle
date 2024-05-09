@@ -101,6 +101,13 @@ public:
     return node_at(fanin).output_function;
   }
 
+  TruthTable get_ntk_fct() {
+    if (!nodes.empty()) {
+      TruthTable output_function = nodes.back().output_function;  // access last element's output_function
+      return output_function;
+    }
+  }
+
   signal create_edge( signal source, signal dest, bool inv = false ) {
     Edge new_edge;
     new_edge.source = source;
@@ -509,14 +516,6 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
   std::vector<EnumNtk> Networks;
   EnumNtk enum_ntk;
   enum_ntk.create_pis( numInputs );
-  // Compute the networks
-  // always two vectors:
-  // vector which stores the available nodes for the level
-  // create all pairs
-  // delete pairs which don't have a node from the level l-1
-  // from this create a
-  // vector which stores the combinations of pairs possible for a level
-  // for each entry in this vector again create the same vectors and so on
 
   // Code: create start_nodes vector
   int cur_lvl = -1;
@@ -531,6 +530,7 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 
   if( !Networks.empty() )
   {
+    // Test code for one network
     auto pntk = Networks[0];
     printf("\nPis");
     pntk.foreach_pi([&](auto const &n)
@@ -557,11 +557,31 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
         }
       }
       // pntk.recompute_node_functions();
+      printf("\n");
+      int edge_invs = 0;
+      for (int j = 0; j < (1 << pntk.edges.size()); ++j)
+      {
+        edge_invs = j;
+        size_t i = 0;
+        printf("\n");
+        std::cout << std::bitset<32>(j) << std::endl;
+        pntk.foreach_edge([&, i](auto const& e) mutable {
+          bool inv_value = (edge_invs & (1 << i)) != 0;
+          pntk.edge_at(e).inv = inv_value;
+          ++i;
+        });
+        pntk.recompute_node_functions();
+        EnumNtk::TruthTable final_tt = pntk.get_ntk_fct();
+        printf("\nfinal truth table\n");
+        kitty::print_binary( final_tt );
+      }
+      printf("\nEdge Count: %zu\n", pntk.edges.size());
+      printf("Edge Combinations: %i\n", edge_invs);
 
       printf("\n");
       kitty::print_binary( (pntk.nodes.back().output_function ) );
     }
-
+    // This is the real code
     /*for(auto &network: Networks){
       int binaryNodeCount = std::count_if(network.nodes.begin(), network.nodes.end(), [](const auto& n) { return n.is_binary; });
       int combinationCount = std::pow(2, binaryNodeCount);
@@ -616,9 +636,9 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
       break;
     }
   }
-  printf("Edge Combinations: %i\n", edge_invs);
+  printf("Edge Combinations: %i\n", edge_invs);*/
 
-  printf("\nEdges: ");
+  /*printf("\nEdges: ");
   enum_ntk.foreach_edge([&]( auto const& e ) {
     printf("%ld ", e);
   });*/
@@ -665,7 +685,7 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
 int main()
 {
   using TT = kitty::dynamic_truth_table;
-  static constexpr uint32_t K = 4u;
+  static constexpr uint32_t K = 3u;
 
   std::vector<TT> xs;
   for( int i{0}; i<K; ++i )
