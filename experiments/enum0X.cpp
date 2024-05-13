@@ -196,6 +196,18 @@ int main()
   try_function( classes, xs[0]^maj( xs[0], xs[1], xs[2] ) );
   try_function( classes, maj(xs[0], fx, xs[2]) );
 
+  printf("NOT CROSSING FREE\n");
+  for( auto const& tt : classes )
+  {
+    kitty::print_binary( tt );
+    printf("\n");
+  }
+  // One HOT function
+  try_function( classes, ( ~( xs[0] & ~xs[1] ) & xs[0] )^(maj( ( xs[0] & ~xs[1] ), xs[1], xs[2] ) ) );
+  // ITE function
+  try_function( classes, ( ( xs[0] ^ ( xs[0] ^ xs[1] ) ) ^ ( ( xs[0] ^ xs[1] ) & xs[2] ) ) );
+
+
   /* enumerate the p classes */
   process_2_inp_luts_3(classes);
 
