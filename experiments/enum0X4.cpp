@@ -41,6 +41,9 @@
 #include <variant>
 #include <vector>
 
+using TT = kitty::dynamic_truth_table;
+using tt_hash = kitty::hash<TT>;
+
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -609,6 +612,8 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
           network.recompute_node_functions();
           EnumNtk::TruthTable final_tt = network.get_ntk_fct();
           update_classes(classes, final_tt);
+          // npn
+          update_classes(classes, kitty::unary_not(final_tt));
         }
       }
     }
@@ -617,24 +622,197 @@ void create_and_try_functions(std::unordered_set<TT, kitty::hash<TT>> & classes,
     printf("No Networks created");
 }
 
+kitty::dynamic_truth_table permute_inputs(kitty::dynamic_truth_table tt, std::vector<uint8_t> perm) {
+  uint8_t num_vars = tt.num_vars();
+  kitty::dynamic_truth_table new_tt(num_vars);
+  for(size_t row = 0; row < (1u << num_vars); ++row) {
+    // Generate new row index by permutation of input variables
+    size_t new_row = 0;
+    for(uint8_t i = 0; i < num_vars; ++i) {
+      new_row |= ((row >> perm[i]) & 1) << i;
+    }
+    // Transfer output value to new truth table
+    if(kitty::get_bit(tt, row)) {
+      kitty::set_bit(new_tt, new_row);
+    }
+  }
+  return new_tt;
+}
+
+void process_2_inp_luts_3( std::unordered_set<TT, tt_hash>& classes )
+{
+  /* enumerate the p classes */
+  std::unordered_set<TT, tt_hash> classes_2;
+  TT tt_2(2);
+  do
+  {
+    const auto res = kitty::exact_npn_canonization( tt_2 );
+    classes_2.insert( std::get<0>( res ) );
+    kitty::next_inplace( tt_2 );
+
+  } while ( !kitty::is_const0( tt_2 ) );
+
+  printf("\n2 inp LUTs\n");
+  for( auto const& tt : classes_2 )
+  {
+    kitty::print_binary( tt );
+    kitty::dynamic_truth_table extended_tt(3);
+
+    for ( size_t i = 0; i < tt.num_bits(); ++i )
+    {
+      if ( kitty::get_bit( tt, i ) )
+      {
+        kitty::set_bit( extended_tt, i );
+        kitty::set_bit( extended_tt, i + tt.num_bits() );
+      }
+    }
+    printf("\n");
+    kitty::print_binary( extended_tt );
+    printf("\n");
+    try_function(classes, extended_tt);
+    try_function(classes, kitty::unary_not(extended_tt));
+    auto tt_extended1 = permute_inputs(extended_tt, {0, 2, 1});
+    kitty::print_binary( tt_extended1 );
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+    printf("\n");
+    tt_extended1 = permute_inputs(extended_tt, {2, 1, 0});
+    kitty::print_binary( tt_extended1 );
+    printf("\n");
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+  }
+}
+
+void process_2_inp_luts_4( std::unordered_set<TT, tt_hash>& classes )
+{
+  /* enumerate the p classes */
+  std::unordered_set<TT, tt_hash> classes_2;
+  TT tt_2(2);
+  do
+  {
+    const auto res = kitty::exact_npn_canonization( tt_2 );
+    classes_2.insert( std::get<0>( res ) );
+    kitty::next_inplace( tt_2 );
+
+  } while ( !kitty::is_const0( tt_2 ) );
+
+  printf("\n2 inp LUTs\n");
+  for( auto const& tt : classes_2 )
+  {
+    kitty::print_binary(tt);
+    kitty::dynamic_truth_table extended_tt(4);
+
+    for (size_t i = 0; i < tt.num_bits(); ++i)
+    {
+      if (kitty::get_bit(tt, i))
+      {
+        kitty::set_bit(extended_tt, i);
+        kitty::set_bit(extended_tt, i + tt.num_bits());
+        kitty::set_bit(extended_tt, i + 2*tt.num_bits());
+        kitty::set_bit(extended_tt, i + 3*tt.num_bits());
+      }
+    }
+    printf("\n");
+    kitty::print_binary( extended_tt );
+    printf("\n");
+    try_function(classes, extended_tt);
+    try_function(classes, kitty::unary_not(extended_tt));
+    auto tt_extended1 = permute_inputs(extended_tt, {0, 2, 1, 3});
+    kitty::print_binary( tt_extended1 );
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+    printf("\n");
+    tt_extended1 = permute_inputs(extended_tt, {0, 3, 1, 2});
+    kitty::print_binary( tt_extended1 );
+    printf("\n");
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+    printf("\n");
+    tt_extended1 = permute_inputs(extended_tt, {1, 2, 0, 3});
+    kitty::print_binary( tt_extended1 );
+    printf("\n");
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+    printf("\n");
+    tt_extended1 = permute_inputs(extended_tt, {1, 3, 0, 2});
+    kitty::print_binary( tt_extended1 );
+    printf("\n");
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+    printf("\n");
+    tt_extended1 = permute_inputs(extended_tt, {2, 3, 0, 1});
+    kitty::print_binary( tt_extended1 );
+    printf("\n");
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+  }
+}
+
+void process_3_inp_luts_4( std::unordered_set<TT, tt_hash>& classes )
+{
+  /* enumerate the p classes */
+  std::unordered_set<TT, tt_hash> classes_3;
+  TT tt_3(3);
+  do
+  {
+    const auto res = kitty::exact_npn_canonization( tt_3 );
+    classes_3.insert( std::get<0>( res ) );
+    kitty::next_inplace( tt_3 );
+
+  } while ( !kitty::is_const0( tt_3 ) );
+
+  printf("\n2 inp LUTs\n");
+  for( auto const& tt : classes_3 )
+  {
+    kitty::print_binary( tt );
+    kitty::dynamic_truth_table extended_tt(4);
+
+    for ( size_t i = 0; i < tt.num_bits(); ++i )
+    {
+      if ( kitty::get_bit( tt, i ) )
+      {
+        kitty::set_bit( extended_tt, i );
+        kitty::set_bit( extended_tt, i + tt.num_bits() );
+      }
+    }
+    try_function(classes, extended_tt);
+    try_function(classes, kitty::unary_not(extended_tt));
+    auto tt_extended1 = permute_inputs(extended_tt, {0, 1, 3, 2});
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+
+    tt_extended1 = permute_inputs(extended_tt, {0, 2, 3, 1});
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+
+    tt_extended1 = permute_inputs(extended_tt, {1, 2, 3, 0});
+    try_function(classes, tt_extended1);
+    try_function(classes, kitty::unary_not(tt_extended1));
+  }
+}
+
 int main()
 {
-  using TT = kitty::dynamic_truth_table;
   static constexpr uint32_t K = 3u;
 
   /* enumerate the npn classes */
   int f_count{0};
-  using tt_hash = kitty::hash<TT>;
   std::unordered_set<TT, tt_hash> classes;
   TT tt(K);
   // This part is needed. Needs some computation time for 4 inputs though
+  auto start = std::chrono::high_resolution_clock::now();
   do
   {
+    // kitty::exact_n_canonization();
     const auto res = kitty::exact_npn_canonization( tt );
     classes.insert( std::get<0>( res ) );
     kitty::next_inplace( tt );
     ++f_count;
   } while ( !kitty::is_const0( tt ) );
+  std::size_t size_before = classes.size();
+  auto stop = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration_1 = stop - start;
 
   // trivial cases
   kitty::dynamic_truth_table tt_zeros(K);
@@ -660,8 +838,17 @@ int main()
   operations.push_back(binary_and_func);
   operations.push_back(binary_xor_func);
 
-  std::size_t size_before = classes.size();
+  start = std::chrono::high_resolution_clock::now();
+  // MAIN FUNCTION
   create_and_try_functions( classes, xs, K, operations );
+  stop = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration_2 = stop - start;
+
+  //
+  // process_2_inp_luts_3(classes);
+  //
+  // process_2_inp_luts_4(classes);
+  // process_3_inp_luts_4(classes);
   std::size_t size_after = classes.size();
 
   printf("\n");
@@ -673,6 +860,8 @@ int main()
   }
   printf("\nNum Classes before: %zu", size_before);
   printf("\nNum Classes after: %zu", size_after);
+  printf("\nTime taken by function1: %f", duration_1.count());
+  printf("\nTime taken by function2: %f", duration_2.count());
 
   return 0;
 }
