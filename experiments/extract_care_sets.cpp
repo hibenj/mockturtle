@@ -377,13 +377,13 @@ void extract_care_sets(Ntk ntk, const Cut& cuts, uint32_t& reduce)
       {
         cs._bits[i] = 0xFFFFFFFFFFFFFFFE;
       }*/
-      reduce += reduce_support<decltype( tt ), NInputs>( tt, care );
+      // reduce += reduce_support<decltype( tt ), NInputs>( tt, care );
 
       if constexpr (num_blocks == 1)
       {
         if ( care._bits != ( 1u << ( 1u << cut->size() ) ) - 1 )
         {
-          //write_word_to_file( tt._bits );
+          // write_word_to_file( tt._bits );
         }
       }
       else
@@ -392,7 +392,8 @@ void extract_care_sets(Ntk ntk, const Cut& cuts, uint32_t& reduce)
         {
           const auto cof = tt._bits[i]; // Use iterator if more than one block
           const auto ccs = care._bits[i];
-          //write_word_to_file( cof );
+          write_word_to_file( cof );
+          write_word_to_file( ccs );
         }
       }
 
@@ -411,14 +412,14 @@ int main()
 
  for ( auto& benchmark : epfl_benchmarks() )
  {
-   if (benchmark != "priority" )
+   if (benchmark != "max" )
    {
      continue;
    }
-   else
+   /*else
    {
      benchmark = "priority_opt";
-   }
+   }*/
    fmt::print( "[i] processing {}\n", benchmark );
    mig_network mig;
    if ( lorina::read_aiger( benchmark_path( benchmark ), aiger_reader( mig ) ) != lorina::return_code::success )
@@ -432,42 +433,27 @@ int main()
      continue;
    }
 
-   static constexpr unsigned cut_size = 8u;
+   static constexpr unsigned cut_size = 7u;
    cut_enumeration_params ps_c;
    ps_c.cut_size = cut_size;
    ps_c.cut_limit = 40u;
    cut_enumeration_stats st_c;
-   const auto cuts = fast_cut_enumeration<aig_network, 8, true, cut_enumeration_params>( aig, ps_c, &st_c );
-
    const auto aig_topo = mockturtle::topo_view(aig);
+   const auto cuts = fast_cut_enumeration<decltype(aig_topo), cut_size, true, cut_enumeration_params>( aig_topo, ps_c, &st_c );
    // const auto cuts = cut_enumeration<aig_network, true>( aig_topo, ps_c, &st_c );
 
-   uint32_t num_cuts = 0;
    uint32_t reduce = 0;
-
    extract_care_sets<aig_network, decltype( cuts ), cut_size>(aig, cuts, reduce);
 
    // std::cout << "num_cuts: " << num_cuts << std::endl;
-   std::cout << "reduce: " << reduce << std::endl;
+   // std::cout << "reduce: " << reduce << std::endl;
 
    // exp( benchmark, size_before, res1.num_gates(), st2.area, depth_before, depth_mig, st2.delay, to_seconds( st1.time_total ), to_seconds( st2.time_total ), cec1, cec2 );
-   break;
+   // break;
  }
 
  exp.save();
  exp.table();
-
- /*uint64_t words[] = {
-     0xF0FEF8FEFCFEFEFE,
-     0x00E080E0C0E0E0E0,
-     0xF8FFFCFFFEFFFFFF,
-     0x80F0C0F0E0F0F0F0
- };
-
- for (auto word : words)
- {
-   write_truth_table_to_file( word );
- }*/
 
  return 0;
 }
