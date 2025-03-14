@@ -35,12 +35,58 @@
 #include <mockturtle/io/aiger_reader.hpp>
 #include <mockturtle/networks/aig.hpp>
 #include <mockturtle/networks/mig.hpp>
+#include <mockturtle/utils/abc.hpp>
 
 #include <experiments.hpp>
+#include <filesystem>
 #include <mockturtle/algorithms/reconv_cut.hpp>
+#include <mockturtle/io/write_aiger.hpp>
 
 using namespace experiments;
 using namespace mockturtle;
+
+template <class Ntk>
+Ntk abc_command_impl(const Ntk& ntk, std::string const& benchmark, std::string const& command_string)
+{
+  std::string bench_path = "/home/benjamin/Desktop/Notes/ACD_benchmarks/opt_benchmarks_temp/";
+  std::string bench_path_orig = "/home/benjamin/Documents/Repositories/working/mockturtle/experiments/benchmarks";
+  std::filesystem::create_directories(bench_path);
+  std::string bench = bench_path + benchmark + ".aig";
+  mockturtle::write_aiger(ntk, bench);
+  std::string command =
+      fmt::format("abc -q \"source -s /home/benjamin/Documents/Repositories/original/abc/abc.rc; read {}; {}; write {}\"", bench, command_string, bench);
+
+  std::array<char, 128> buffer;
+  std::string           result;
+#if WIN32
+  std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(command.c_str(), "r"), _pclose);
+#else
+  std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+#endif
+  if (!pipe)
+  {
+    throw std::runtime_error("popen() failed");
+  }
+  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
+  {
+    result += buffer.data();
+  }
+
+  Ntk aig;
+  const auto read_aiger_result = lorina::read_aiger(bench, mockturtle::aiger_reader(aig));
+  if (read_aiger_result != lorina::return_code::success)
+  {
+    throw std::runtime_error("Failed to read Aiger file");
+  }
+  return aig;
+}
+
+// general abc command: aig
+template <class Ntk>
+Ntk abc_command(const Ntk& ntk, std::string const& benchmark, std::string const& command_string)
+{
+  return abc_command_impl(ntk, benchmark, command_string);
+}
 
 template<typename STT>
 void swap_inplace_local( STT& tt, uint8_t var_index1, uint8_t var_index2, uint32_t num_vars )
@@ -412,10 +458,10 @@ int main()
 
  for ( auto& benchmark : epfl_benchmarks() )
  {
-   if (benchmark != "max" )
+   /*if (benchmark != "hyp" )
    {
      continue;
-   }
+   }*/
    /*else
    {
      benchmark = "priority_opt";
@@ -428,12 +474,14 @@ int main()
    }
 
    aig_network aig;
-   if ( lorina::read_aiger( benchmark_path( benchmark ), aiger_reader( aig ) ) != lorina::return_code::success )
+   std::string bench_path = "/home/benjamin/Desktop/Notes/ACD_benchmarks/opt_benchmarks_temp/";
+   std::string bench = bench_path + benchmark + ".aig";
+   if ( lorina::read_aiger( bench, aiger_reader( aig ) ) != lorina::return_code::success )
    {
      continue;
    }
 
-   static constexpr unsigned cut_size = 7u;
+   static constexpr unsigned cut_size = 11u;
    cut_enumeration_params ps_c;
    ps_c.cut_size = cut_size;
    ps_c.cut_limit = 40u;
