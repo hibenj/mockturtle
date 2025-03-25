@@ -75,7 +75,7 @@ public:
 
     std::vector<uint32_t> cut_leaves;
     for ( auto leaf : *cut_ )
-      cut_leaves.push_back( leaf );
+      cut_leaves.insert( cut_leaves.begin(), leaf );
 
     for ( int polarity = 0; polarity <= 1; ++polarity )
     {
