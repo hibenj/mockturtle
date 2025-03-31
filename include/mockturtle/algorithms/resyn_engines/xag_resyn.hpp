@@ -100,10 +100,25 @@ struct aig_resyn_static_params_default : public xag_resyn_static_params_default<
 };
 
 template<class Ntk>
+struct xag_resyn_static_params_for_win_resub : public xag_resyn_static_params
+{
+  using truth_table_storage_type = unordered_node_map<kitty::dynamic_truth_table, Ntk>;
+  using node_type = typename Ntk::node;
+};
+
+template<class Ntk>
 struct xag_resyn_static_params_for_sim_resub : public xag_resyn_static_params
 {
   using truth_table_storage_type = incomplete_node_map<kitty::partial_truth_table, Ntk>;
   using node_type = typename Ntk::node;
+};
+
+template<class Ntk>
+struct aig_resyn_static_params_for_win_resub : public xag_resyn_static_params
+{
+  using truth_table_storage_type = unordered_node_map<kitty::dynamic_truth_table, Ntk>;
+  using node_type = typename Ntk::node;
+  static constexpr bool use_xor = false;
 };
 
 template<class Ntk>
@@ -576,7 +591,7 @@ private:
     {
       l.score = kitty::count_ones( ( l.lit & 0x1 ? ~get_div( l.lit >> 1 ) : get_div( l.lit >> 1 ) ) & on_off_sets[on_off] );
     }
-    std::sort( unate_lits.begin(), unate_lits.end(), [&]( unate_lit const& l1, unate_lit const& l2 ) {
+    std::stable_sort( unate_lits.begin(), unate_lits.end(), [&]( unate_lit const& l1, unate_lit const& l2 ) {
       return l1.score > l2.score; // descending order
     } );
   }
@@ -595,7 +610,7 @@ private:
         p.score = kitty::count_ones( ( p.lit1 & 0x1 ? ~get_div( p.lit1 >> 1 ) : get_div( p.lit1 >> 1 ) ) & ( p.lit2 & 0x1 ? ~get_div( p.lit2 >> 1 ) : get_div( p.lit2 >> 1 ) ) & on_off_sets[on_off] );
       }
     }
-    std::sort( unate_pairs.begin(), unate_pairs.end(), [&]( fanin_pair const& p1, fanin_pair const& p2 ) {
+    std::stable_sort( unate_pairs.begin(), unate_pairs.end(), [&]( fanin_pair const& p1, fanin_pair const& p2 ) {
       return p1.score > p2.score; // descending order
     } );
   }
