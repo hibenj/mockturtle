@@ -87,24 +87,37 @@ public:
         if ( status == -1 )
           break;
 
-        std::vector<uint32_t> blocking_clause;
+        std::vector<uint32_t> cut_blocking_clause;
+        // std::vector<uint32_t> pi_blocking_clause;
         uint64_t index = 0;
 
-        for ( size_t i = 0; i < cut_leaves.size(); ++i )
+        // 1. Block cut leaf assignment
+        for (size_t i = 0; i < cut_leaves.size(); ++i)
         {
           const auto node = cut_leaves[i];
           const auto lit = global_lits_[node];
-          bool value = pabc::sat_solver_var_value( solver_, node );
+          bool value = pabc::sat_solver_var_value(solver_, node);
+          cut_blocking_clause.push_back(value ? lit ^ 1 : lit);
 
-          index |= ( uint64_t( value ) << ( cut_leaves.size() - 1 - i ) );
-          blocking_clause.push_back( value ? lit ^ 1 : lit );
+          // Also build the index for the truth table
+          index |= (uint64_t(value) << (cut_leaves.size() - 1 - i));
         }
+        // Block full PI assignment too
+        /*ntk_.foreach_pi([&](const auto& pi) {
+          const auto lit = global_lits_[pi];
+          bool value = pabc::sat_solver_var_value(solver_, pi);
+          pi_blocking_clause.push_back(value ? lit ^ 1 : lit);  // block this PI assignment
+        });*/
 
         // Set the corresponding bit in the truth table
         care_tt._bits[index >> 6] |= uint64_t( 1 ) << ( index & 0x3F );
 
-        auto lits = (int*)( const_cast<uint32_t*>( blocking_clause.data() ) );
-        pabc::sat_solver_addclause( solver_, lits, lits + blocking_clause.size() );
+        // Add both blocking clauses
+        auto cut_lits = (int*)(cut_blocking_clause.data());
+        pabc::sat_solver_addclause(solver_, cut_lits, cut_lits + cut_blocking_clause.size());
+
+        /*auto pi_lits = (int*)(pi_blocking_clause.data());
+        pabc::sat_solver_addclause(solver_, pi_lits, pi_lits + pi_blocking_clause.size());*/
       }
     }
 

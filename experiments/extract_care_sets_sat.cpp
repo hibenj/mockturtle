@@ -37,21 +37,56 @@
 #include <mockturtle/networks/mig.hpp>
 
 #include <experiments.hpp>
-#include <mockturtle/algorithms/dont_cares.hpp>
 #include <mockturtle/algorithms/extract_care_set_sat.hpp>
-#include <mockturtle/algorithms/reconv_cut.hpp>
+
+#include <chrono>
 
 using namespace experiments;
 using namespace mockturtle;
+
+void write_word_to_file( uint64_t word )
+{
+  std::string filename = "/home/benjamin/Desktop/Notes/ACD_benchmarks/truth_table.data";
+
+  std::ofstream file( filename, std::ios::binary | std::ios::app ); // Open in binary append mode
+  if ( !file )
+  {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    return;
+  }
+
+  // Write the raw 8-byte (64-bit) word directly in binary format
+  file.write( reinterpret_cast<const char*>( &word ), sizeof( uint64_t ) );
+
+  file.close();
+}
+
+void write_word_to_file_cs( uint64_t word )
+{
+  std::string filename = "/home/benjamin/Desktop/Notes/ACD_benchmarks/cs.data";
+
+  std::ofstream file( filename, std::ios::binary | std::ios::app ); // Open in binary append mode
+  if ( !file )
+  {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    return;
+  }
+
+  // Write the raw 8-byte (64-bit) word directly in binary format
+  file.write( reinterpret_cast<const char*>( &word ), sizeof( uint64_t ) );
+
+  file.close();
+}
 
 int main()
 {
   experiment<std::string, uint32_t, uint32_t, double, uint32_t, uint32_t, double, float, float, bool, bool> exp(
       "mapper", "benchmark", "size", "size_mig", "area_after", "depth", "depth_mig", "delay_after", "runtime1", "runtime2", "equivalent1", "equivalent2" );
 
+  auto start = std::chrono::high_resolution_clock::now();
   for ( auto& benchmark : epfl_benchmarks() )
   {
-    if ( benchmark != "ctrl" )
+    if ( benchmark != "arbiter" )
     {
       continue;
     }
@@ -85,20 +120,33 @@ int main()
         }
 
         const auto tt = cuts.truth_table( *cut );
-        const auto care_set = extract_care_set_sat( aig, cut );
-        std::cout << "TT:\n";
-        kitty::print_binary( tt );
-        std::cout << "\n";
-        std::cout << "CS:\n";
-        kitty::print_binary( care_set );
-        std::cout << "\n";
-        std::cout << kitty::count_ones( care_set ) << "\n";
+        const auto care = extract_care_set_sat( aig, cut );
+
+        uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
+        for ( uint32_t i = 0; i < num_blocks; ++i )
+        {
+          // write tt to file
+          const auto cof = tt._bits[i];
+          write_word_to_file( cof );
+        }
+        for ( uint32_t i = 0; i < num_blocks; ++i )
+        {
+          // write cs to file
+          const auto ccs = care._bits[i];
+          write_word_to_file( ccs );
+          write_word_to_file_cs( ccs );
+        }
+        // std::cout << "Num Cuts: " << num_cuts << std::endl;
         ++num_cuts;
       }
     } );
     std::cout << "Num Cuts: " << num_cuts << std::endl;
-    break;
+    // break;
   }
+  auto end = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<double> elapsed_seconds = end - start;
+  std::cout << "Execution time: " << elapsed_seconds.count() << "s\n";
 
   exp.save();
   exp.table();

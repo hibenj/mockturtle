@@ -37,6 +37,8 @@
 #include <mockturtle/networks/mig.hpp>
 
 #include <experiments.hpp>
+#include <mockturtle/algorithms/dont_cares.hpp>
+#include <mockturtle/algorithms/extract_care_set_sat.hpp>
 #include <mockturtle/algorithms/reconv_cut.hpp>
 
 using namespace experiments;
@@ -59,8 +61,25 @@ void write_word_to_file( uint64_t word )
   file.close();
 }
 
+void write_word_to_file_cs( uint64_t word )
+{
+  std::string filename = "/home/benjamin/Desktop/Notes/ACD_benchmarks/cs.data";
+
+  std::ofstream file( filename, std::ios::binary | std::ios::app ); // Open in binary append mode
+  if ( !file )
+  {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    return;
+  }
+
+  // Write the raw 8-byte (64-bit) word directly in binary format
+  file.write( reinterpret_cast<const char*>( &word ), sizeof( uint64_t ) );
+
+  file.close();
+}
+
 template<typename Ntk, typename Cut, unsigned NInputs>
-void extract_care_sets( Ntk ntk, const Cut& cuts )
+void extract_care_sets( const Ntk& ntk, const Cut& cuts, std::string benchmark )
 {
   uint64_t num_cuts = 0;
   static constexpr uint32_t window_size = 16;
@@ -75,6 +94,7 @@ void extract_care_sets( Ntk ntk, const Cut& cuts )
 
   // match gates
   ntk.foreach_gate( [&]( auto const& n ) {
+
     const auto index = ntk.node_to_index( n );
 
     std::vector<node<Ntk>> roots = { n };
@@ -99,8 +119,6 @@ void extract_care_sets( Ntk ntk, const Cut& cuts )
         // Ignore cuts which are not maximum size
         continue;
       }
-
-      ++num_cuts;
 
       // match the cut using canonization and get the gates
       const auto tt = cuts.truth_table( *cut );
@@ -137,10 +155,42 @@ void extract_care_sets( Ntk ntk, const Cut& cuts )
       }
       else
       {
-        // completely specified
-        care = ~care;
-      }
+        /*if ( benchmark == "hyp" )
+        {
+          continue;
+        }
+        if ( benchmark == "log2" )
+        {
+          continue;
+        }
+        if ( benchmark == "multiplier" )
+        {
+          continue;
+        }
+        if ( benchmark == "sqrt" )
+        {
+          continue;
+        }
+        if ( benchmark == "mem_ctrl" )
+        {
+          continue;
+        }*/
 
+        const auto care_dyn = extract_care_set_sat( ntk, cut );
+        care = care_dyn;
+        // care = ~care;
+      }
+      ++num_cuts;
+      // std::cout << "Num Cuts: " << benchmark << " progress " << num_cuts << std::endl;
+      /*std::cout << "TT:\n";
+      kitty::print_binary(tt);
+      std::cout << "\n";
+      std::cout << "CS:\n";
+      kitty::print_binary(care);
+      std::cout << "\n";
+      std::cout << kitty::count_ones(care) << "\n";*/
+
+      // write to file
       uint32_t const num_blocks = ( NInputs > 6 ) ? ( 1u << ( NInputs - 6 ) ) : 1;
 
       if constexpr ( num_blocks == 1 )
@@ -164,6 +214,7 @@ void extract_care_sets( Ntk ntk, const Cut& cuts )
           // write cs to file
           const auto ccs = care._bits[i];
           write_word_to_file( ccs );
+          write_word_to_file_cs( ccs );
         }
       }
     }
@@ -180,13 +231,13 @@ int main()
 
   for ( auto& benchmark : epfl_benchmarks() )
   {
-    fmt::print( "[i] processing {}\n", benchmark );
-    mig_network mig;
-    if ( lorina::read_aiger( benchmark_path( benchmark ), aiger_reader( mig ) ) != lorina::return_code::success )
+    /*if ( benchmark != "sqrt" )
     {
       continue;
-    }
+    }*/
+    fmt::print( "[i] processing {}\n", benchmark );
 
+    // read benchmark
     aig_network aig;
     std::string bench_path = "/home/benjamin/Desktop/Notes/ACD_benchmarks/opt_benchmarks_temp/";
     std::string bench = bench_path + benchmark + ".aig";
@@ -195,7 +246,8 @@ int main()
       continue;
     }
 
-    static constexpr unsigned cut_size = 10u;
+    // cut enumeration
+    static constexpr unsigned cut_size = 11u;
     cut_enumeration_params ps_c;
     ps_c.cut_size = cut_size;
     ps_c.cut_limit = 40u;
@@ -203,7 +255,8 @@ int main()
     const auto aig_topo = mockturtle::topo_view( aig );
     const auto cuts = fast_cut_enumeration<decltype( aig_topo ), cut_size, true, cut_enumeration_params>( aig_topo, ps_c, &st_c );
 
-    extract_care_sets<aig_network, decltype( cuts ), cut_size>( aig, cuts );
+    //
+    extract_care_sets<aig_network, decltype( cuts ), cut_size>( aig, cuts, benchmark );
   }
 
   exp.save();
