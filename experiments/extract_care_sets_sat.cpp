@@ -26,18 +26,15 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <vector>
 
 #include <fmt/format.h>
 #include <lorina/aiger.hpp>
 #include <lorina/genlib.hpp>
-#include <mockturtle/algorithms/mapper.hpp>
 #include <mockturtle/io/aiger_reader.hpp>
 #include <mockturtle/networks/aig.hpp>
-#include <mockturtle/networks/mig.hpp>
-
-#include <experiments.hpp>
+#include <mockturtle/algorithms/cut_enumeration.hpp>
 #include <mockturtle/algorithms/extract_care_set_sat.hpp>
+#include <experiments.hpp>
 
 #include <chrono>
 
@@ -80,16 +77,35 @@ void write_word_to_file_cs( uint64_t word )
 
 int main()
 {
-  experiment<std::string, uint32_t, uint32_t, double, uint32_t, uint32_t, double, float, float, bool, bool> exp(
-      "mapper", "benchmark", "size", "size_mig", "area_after", "depth", "depth_mig", "delay_after", "runtime1", "runtime2", "equivalent1", "equivalent2" );
+  experiment<std::string, uint32_t, uint32_t, uint32_t> exp( "Stats", "benchmark", "PIs", "Gates", "Cuts" );
 
   auto start = std::chrono::high_resolution_clock::now();
   for ( auto& benchmark : epfl_benchmarks() )
   {
-    if ( benchmark != "arbiter" )
+    /*if ( benchmark != "div" )
+    {
+      continue;
+    }*/
+    /*if ( benchmark != "hyp" )
+    {
+      continue;
+    }*/
+    /*if ( benchmark != "log2" )
+    {
+      continue;
+    }*/
+    /*if ( benchmark != "multiplier" )
+    {
+      continue;
+    }*/
+    if ( benchmark != "sin" )
     {
       continue;
     }
+    /*if ( benchmark != "mem_ctrl" )
+    {
+      continue;
+    }*/
     fmt::print( "[i] processing {}\n", benchmark );
 
     aig_network aig;
@@ -99,6 +115,10 @@ int main()
     {
       continue;
     }
+    /*if( aig.num_gates() > 16000 )
+    {
+      continue;
+    }*/
 
     static constexpr unsigned cut_size = 7u;
     cut_enumeration_params ps_c;
@@ -107,7 +127,7 @@ int main()
     cut_enumeration_stats st_c;
     const auto aig_topo = mockturtle::topo_view( aig );
     const auto cuts = fast_cut_enumeration<decltype( aig_topo ), cut_size, true, cut_enumeration_params>( aig_topo, ps_c, &st_c );
-
+    fmt::print( "[i] cut enumeration finished {}\n", benchmark );
     uint32_t num_cuts = 0;
     aig_topo.foreach_gate( [&]( auto const& n ) {
       const auto index = aig_topo.node_to_index( n );
@@ -120,7 +140,7 @@ int main()
         }
 
         const auto tt = cuts.truth_table( *cut );
-        const auto care = extract_care_set_sat( aig, cut );
+        const auto care = mockturtle::detail::extract_care_set_sat( aig, cut );
 
         uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
         for ( uint32_t i = 0; i < num_blocks; ++i )
@@ -136,12 +156,13 @@ int main()
           write_word_to_file( ccs );
           write_word_to_file_cs( ccs );
         }
-        // std::cout << "Num Cuts: " << num_cuts << std::endl;
+        std::cout << "Num Cuts: " << num_cuts << std::endl;
         ++num_cuts;
       }
     } );
     std::cout << "Num Cuts: " << num_cuts << std::endl;
     // break;
+    exp( benchmark, aig.num_pis(), aig.size(), num_cuts );
   }
   auto end = std::chrono::high_resolution_clock::now();
 

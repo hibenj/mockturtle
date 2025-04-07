@@ -61,6 +61,8 @@
 #include "collapse_mapped.hpp"
 #include "cut_enumeration.hpp"
 #include "exorcism.hpp"
+#include "extract_care_set_sat.hpp"
+#include "reconv_cut.hpp"
 #include "simulation.hpp"
 
 namespace mockturtle
@@ -642,6 +644,9 @@ public:
       truth_tables.insert( zero );
       truth_tables.insert( proj );
 
+      care_sets.emplace_back( zero );
+      care_sets.emplace_back( proj );
+
       /* reserve cost cache */
       if constexpr ( !std::is_same<LUTCostFn, lut_unitary_cost>::value )
       {
@@ -690,6 +695,16 @@ public:
 
     perform_mapping();
     derive_mapping();
+  }
+
+  tt_cache const& get_truth_cache()
+  {
+    return truth_tables;
+  }
+
+  std::vector<TT> const& get_care_cache()
+  {
+    return care_sets;
   }
 
 private:
@@ -2076,6 +2091,73 @@ private:
     return true;
   }
 
+  kitty::dynamic_truth_table compute_care_set( uint32_t index, const std::vector<uint32_t>& leaves )
+  {
+    // ++num_cuts;
+    // std::cout << "Num Calls: " << num_cuts << std::endl;
+    static constexpr uint32_t window_size = 14;
+    static constexpr uint32_t max_window_size = 14;
+
+    reconvergence_driven_cut_parameters rps;
+    rps.max_leaves = window_size; // ps.window_size;
+    reconvergence_driven_cut_statistics rst;
+    detail::reconvergence_driven_cut_impl<Ntk, false, false> reconv_cuts( ntk, rps, rst );
+
+    color_view<Ntk> color_ntk{ ntk };
+
+    std::vector<mockturtle::node<Ntk>> roots = {  ntk.index_to_node( index ) };
+    auto const extended_leaves = reconv_cuts.run( roots ).first;
+
+    std::vector<mockturtle::node<Ntk>> gates{ collect_nodes( color_ntk, extended_leaves, roots ) };
+    window_view window_ntk{ color_ntk, extended_leaves, roots, gates };
+
+    default_simulator<kitty::static_truth_table<max_window_size>> sim;
+    const auto tts = simulate_nodes<kitty::static_truth_table<max_window_size>>( window_ntk, sim );
+
+    // dont cares computation
+    const auto sz = leaves.size();
+    kitty::dynamic_truth_table care = kitty::dynamic_truth_table( leaves.size() );
+
+    bool containment = true;
+    bool filter = false;
+    for ( auto const& l : leaves )
+    {
+      if ( color_ntk.color( ntk.index_to_node( l ) ) != color_ntk.current_color() )
+      {
+        containment = false;
+        break;
+      }
+    }
+
+    if ( containment )
+    {
+      // compute care set
+      for ( auto i = 0u; i < ( 1u << window_ntk.num_pis() ); ++i )
+      {
+        uint32_t entry{ 0u };
+        auto j = 0u;
+        for ( auto const& l : leaves )
+        {
+          entry |= kitty::get_bit( tts[l], i ) << j;
+          ++j;
+        }
+        kitty::set_bit( care, entry );
+      }
+    }
+    else
+    {
+      if ( ntk.num_gates() < 1 )
+      {
+        care = extract_care_set_sat( ntk, leaves );
+      }
+      else
+      {
+        care = ~care;
+      }
+    }
+    return care;
+  }
+
   uint32_t compute_truth_table( uint32_t index, std::vector<cut_t const*> const& vcuts, cut_t& res )
   {
     // stopwatch t( st.cut_enumeration_st.time_truth_table ); /* runtime optimized */
@@ -2107,11 +2189,23 @@ private:
           *it_leaves++ = leaves_before[*it_support++];
         }
         res.set_leaves( leaves_after.begin(), leaves_after.end() );
-        return truth_tables.insert( tt_res_shrink );
+        const auto sz = truth_tables.size();
+        const auto idx = truth_tables.insert( tt_res_shrink );
+        if ( sz != truth_tables.size() )
+        {
+          care_sets.emplace_back( compute_care_set( index, leaves_after ));
+        }
+        return idx;
       }
     }
-
-    return truth_tables.insert( tt_res );
+    const auto sz = truth_tables.size();
+    const auto idx = truth_tables.insert( tt_res );
+    if ( sz != truth_tables.size() )
+    {
+      std::vector<uint32_t> leaves( res.begin(), res.end() );
+      care_sets.emplace_back( compute_care_set( index, leaves ) );
+    }
+    return idx;
   }
 
   void compute_mffcs_mapping()
@@ -2846,8 +2940,10 @@ private:
   std::vector<cut_set_t> cuts;  /* compressed representation of cuts */
   cut_merge_t lcuts;            /* cut merger container */
   tt_cache truth_tables;        /* cut truth tables */
+  std::vector<TT> care_sets;    /* cut care sets */
   cost_cache truth_tables_cost; /* truth tables cost */
   isop_cache isops;             /* cache for isops */
+  uint64_t num_cuts = 0;
 };
 #pragma endregion
 
