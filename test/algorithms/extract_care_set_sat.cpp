@@ -38,7 +38,7 @@ TEST_CASE( "And Or example", "[extract_care_set_sat]" )
       continue;
     }
     const auto tt = cuts.truth_table( *cut );
-    const auto care_set = extract_care_set_sat( aig, cut );
+    const auto care_set = detail::extract_care_set_sat( aig, cut );
 
     // The truth table of this is ~or0 & and0
     CHECK( tt._bits == 2u );
