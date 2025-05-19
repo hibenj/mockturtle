@@ -785,7 +785,7 @@ private:
     uint64_t constexpr masks[] = { 0x0, 0x3, 0xF, 0xFF, 0xFFFF, 0xFFFFFFFF };
 
     uint32_t size = 0;
-    uint32_t size2 = 0;
+    uint32_t partial_size = 0;
     uint64_t prev = -1;
 
     std::array<uint32_t, 64> base_set{};
@@ -816,11 +816,11 @@ private:
         }
         else if ( fs_cs )
         {
-          partial_fn[size2] = fs_fn;
-          partial_cs[size2] = fs_cs;
-          block_index[size2] = i;
-          entry_index[size2] = j;
-          ++size2;
+          partial_fn[partial_size] = fs_fn;
+          partial_cs[partial_size] = fs_cs;
+          block_index[partial_size] = i;
+          entry_index[partial_size] = j;
+          ++partial_size;
         }
 
         cof >>= ( 1u << free_set_size );
@@ -828,14 +828,23 @@ private:
       }
     }
 
-    std::sort( base_set.begin(), base_set.begin() + size );
-    size = std::unique( base_set.begin(), base_set.begin() + size ) - base_set.begin();
+    std::sort(base_set.begin(), base_set.begin() + size);
+    uint32_t unique_size = (size == 0) ? 0 : 1;
 
-    for ( uint32_t i = 0; i < size2; ++i )
+    for (size_t i = 1; i < size; ++i)
+    {
+      if (base_set[i] != base_set[unique_size - 1])
+      {
+        base_set[unique_size++] = base_set[i];
+      }
+    }
+    // uint32_t unique_size = std::unique( base_set.begin(), base_set.begin() + size ) - base_set.begin();
+
+    for ( uint32_t i = 0; i < partial_size; ++i )
     {
       bool matched = false;
 
-      for ( uint32_t j = 0; j < size; ++j )
+      for ( uint32_t j = 0; j < unique_size; ++j )
       {
         if ( ( base_set[j] & partial_cs[i] ) == ( partial_fn[i] & partial_cs[i] ) )
         {
@@ -858,7 +867,7 @@ private:
 
       if ( !matched )
       {
-        base_set[size++] = partial_fn[i];
+        base_set[unique_size++] = partial_fn[i];
       }
     }
 
@@ -868,10 +877,7 @@ private:
               "Modified truth table is not equivalent under care set!" );
     }
 
-    std::sort( base_set.begin(), base_set.begin() + size );
-    size = std::unique( base_set.begin(), base_set.begin() + size ) - base_set.begin();
-
-    return size;
+    return unique_size;
   }
 
   uint32_t column_multiplicity2( STT const& tt, uint32_t free_set_size )

@@ -306,10 +306,10 @@ int32_t mockturtle_acd_dc_generic( std::string const& tt_string, std::string con
 void compute_success_rate_delay( uint32_t cut_size, uint32_t late_vars = 2 )
 {
   /* read file */
-  std::string in_string = "cuts_" + std::to_string( cut_size ) + ".txt";
-  std::string in_cs_string = "cuts_cs_" + std::to_string( cut_size ) + ".txt";
-  // std::string in_string = "unopt/var7/cuts_" + std::to_string( cut_size ) + "_16.txt";
-  // std::string in_cs_string = "unopt/var7/cuts_cs_" + std::to_string( cut_size ) + "_16.txt";
+  //std::string in_string = "cuts_" + std::to_string( cut_size ) + ".txt";
+  //std::string in_cs_string = "cuts_cs_" + std::to_string( cut_size ) + ".txt";
+  std::string in_string = "unopt/var7/cuts_" + std::to_string( cut_size ) + "_16.txt";
+  std::string in_cs_string = "unopt/var7/cuts_cs_" + std::to_string( cut_size ) + "_16.txt";
   std::ifstream in( in_string );
   std::ifstream in_cs( in_cs_string );
 
@@ -546,7 +546,7 @@ int main( int argc, char** argv )
   uint32_t cut_size = atoi( argv[1] );
 
   //compute_functions(cut_size);
-  compute_success_rate_delay( cut_size, 5 );
+  compute_success_rate_delay( cut_size, 1 );
 
   /*for ( auto& benchmark : epfl_benchmarks() )
   {
