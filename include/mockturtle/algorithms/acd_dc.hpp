@@ -1,26 +1,26 @@
 /* mockturtle: C++ logic network library
-* Copyright (C) 2018-2023  EPFL
-*
-* Permission is hereby granted, free of charge, to any person
-* obtaining a copy of this software and associated documentation
-* files (the "Software"), to deal in the Software without
-* restriction, including without limitation the rights to use,
-* copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the
-* Software is furnished to do so, subject to the following
-* conditions:
-*
-* The above copyright notice and this permission notice shall be
-* included in all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-* OTHER DEALINGS IN THE SOFTWARE.
+ * Copyright (C) 2018-2023  EPFL
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following
+ * conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
  */
 
 /*!
@@ -40,8 +40,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "kitty/detail/constants.hpp"
 #include "kitty/constructors.hpp"
+#include "kitty/detail/constants.hpp"
 #include "kitty/dynamic_truth_table.hpp"
 #include "kitty/operations.hpp"
 #include "kitty/operators.hpp"
@@ -275,7 +275,7 @@ private:
     if ( pst )
     {
       pst->num_luts = best_multiplicity <= 2 ? 2 : best_multiplicity <= 4 ? 3
-                                               : best_multiplicity <= 8 ? 4
+                                               : best_multiplicity <= 8   ? 4
                                                                           : 5;
       pst->num_edges = ( pst->num_luts - 1 ) * ( num_vars - best_free_set ) + ( pst->num_luts - 1 ) + best_free_set;
     }
@@ -295,7 +295,7 @@ private:
     local_extend_to( best_tt, num_vars );
   }
 
-  void init_care_set( const word *pcs )
+  void init_care_set( const word* pcs )
   {
     uint32_t const num_blocks = ( num_vars <= 6 ) ? 1 : ( 1 << ( num_vars - 6 ) );
 
@@ -397,7 +397,6 @@ private:
     static_assert( free_set_size == 1, "Expected free_set_size to be 1 for DC1 optimization." );
 
     constexpr uint64_t coverage_masks[] = { 0x5, 0x6, 0x9, 0xA };
-    uint64_t mapping[4] = { 0xF, 0xF, 0xF, 0xF };
 
     uint64_t multiplicity_set = 0;
     uint64_t encoding_mask = 0;
@@ -445,6 +444,7 @@ private:
     if constexpr ( manipulate )
     {
       STT new_tt = tt;
+      uint64_t mapping[4] = { 0xF, 0xF, 0xF, 0xF };
 
       // Assign unassigned partials to selected base values
       uint64_t default_dc_val = 0xF;
@@ -520,10 +520,10 @@ private:
     uint32_t bit_position = 0;
 
     for ( uint32_t i = 0; i < pop; ++i )
-    {  // Loop runs at most 4 times
-      uint32_t lowest_bit = __builtin_ctzll( ccs_mask );  // Find rightmost set bit in ccs_mask
+    {                                                                        // Loop runs at most 4 times
+      uint32_t lowest_bit = __builtin_ctzll( ccs_mask );                     // Find rightmost set bit in ccs_mask
       compacted_value |= ( ( cof_mask >> lowest_bit ) & 1 ) << bit_position; // Extract and shift
-      ccs_mask ^= ( UINT64_C( 1 ) << lowest_bit ); // Remove lowest set bit efficiently
+      ccs_mask ^= ( UINT64_C( 1 ) << lowest_bit );                           // Remove lowest set bit efficiently
       ++bit_position;
     }
 
@@ -531,7 +531,7 @@ private:
   }
 
   // Helper: Map uncovered DC terms to a selected representative
-  static void encode_dc2( uint64_t *mapping, uint64_t mask, uint64_t cof_masked )
+  static void encode_dc2( uint64_t* mapping, uint64_t mask, uint64_t cof_masked )
   {
     while ( mask )
     {
@@ -543,14 +543,13 @@ private:
   }
 
   // Greedy Minimum Hitting Set solver for 4-variable functions
-  static void min_hitting_set2( uint64_t &selected_set, uint64_t uncovered_mask )
+  static void min_hitting_set2( uint64_t& selected_set, uint64_t uncovered_mask )
   {
     constexpr uint64_t coverage_masks[] = {
         0x0101010111111155, 0x0102020211212256, 0x0201040412121459, 0x020208081222285A,
         0x0404011021144165, 0x0408022021248266, 0x0804044022184469, 0x080808802228886A,
         0x1010100144411195, 0x1020200244812296, 0x2010400448421499, 0x202080084882289A,
-        0x40401010844441A5, 0x40802020848482A6, 0x80404040884844A9, 0x80808080888888AA
-    };
+        0x40401010844441A5, 0x40802020848482A6, 0x80404040884844A9, 0x80808080888888AA };
 
     std::vector<uint8_t> active_indices;
     for ( uint8_t i = 0; i < 16; ++i )
@@ -595,7 +594,8 @@ private:
         }
       }
 
-      if ( best_index == 0xFF ) break;
+      if ( best_index == 0xFF )
+        break;
 
       uncovered_mask &= ~coverage_masks[best_index];
       selected_set |= ( UINT64_C( 1 ) << best_index );
@@ -604,17 +604,16 @@ private:
 
   // Compute the minimal column multiplicity with optional TT manipulation for free_set_size = 2
   template<uint32_t free_set_size, bool manipulate = false>
-  uint32_t column_multiplicity_dc2( const STT &tt, const STT &cs )
+  uint32_t column_multiplicity_dc2( const STT& tt, const STT& cs )
   {
     static_assert( free_set_size == 2, "Wrong free set size for method used, expected 2" );
 
-    constexpr uint64_t encode[16] = {255, 0, 1, 4, 2, 5, 6, 10, 3, 7, 8, 11, 9, 12, 13, 14};
+    constexpr uint64_t encode[16] = { 255, 0, 1, 4, 2, 5, 6, 10, 3, 7, 8, 11, 9, 12, 13, 14 };
     uint64_t constexpr coverage_masks[] = {
         0x0101010111111155, 0x0102020211212256, 0x0201040412121459, 0x020208081222285A,
         0x0404011021144165, 0x0408022021248266, 0x0804044022184469, 0x080808802228886A,
         0x1010100144411195, 0x1020200244812296, 0x2010400448421499, 0x202080084882289A,
-        0x40401010844441A5, 0x40802020848482A6, 0x80404040884844A9, 0x80808080888888AA
-    };
+        0x40401010844441A5, 0x40802020848482A6, 0x80404040884844A9, 0x80808080888888AA };
 
     const uint32_t num_blocks = ( num_vars > 6 ) ? ( 1u << ( num_vars - 6 ) ) : 1;
     uint64_t selected_set = 0;
@@ -669,7 +668,6 @@ private:
     assert( multiplicity <= 16 && "Bug" );
     assert( multiplicity > 0 && "Bug2" );
 
-
     if constexpr ( manipulate )
     {
       STT new_tt = tt;
@@ -681,14 +679,15 @@ private:
         uint32_t index = __builtin_ctzll( tmp_set );
         tmp_set &= tmp_set - 1;
         encode_dc2( mapping, coverage_masks[index], index );
-        if ( default_value == 0xFF ) default_value = index;
+        if ( default_value == 0xFF )
+          default_value = index;
       }
 
       for ( uint32_t i = 0; i < num_blocks; ++i )
       {
         uint64_t tt_block = tt._bits[i];
         uint64_t cs_block = cs._bits[i];
-        uint64_t &new_block = new_tt._bits[i];
+        uint64_t& new_block = new_tt._bits[i];
 
         for ( uint32_t j = 0; j < ( 64 >> free_set_size ); ++j )
         {
@@ -828,12 +827,12 @@ private:
       }
     }
 
-    std::sort(base_set.begin(), base_set.begin() + size);
-    uint32_t unique_size = (size == 0) ? 0 : 1;
+    std::sort( base_set.begin(), base_set.begin() + size );
+    uint32_t unique_size = ( size == 0 ) ? 0 : 1;
 
-    for (size_t i = 1; i < size; ++i)
+    for ( size_t i = 1; i < size; ++i )
     {
-      if (base_set[i] != base_set[unique_size - 1])
+      if ( base_set[i] != base_set[unique_size - 1] )
       {
         base_set[unique_size++] = base_set[i];
       }
@@ -1992,17 +1991,17 @@ private:
   }
 
   /* Decomposition format for ABC
-  *
-  * The record is an array of unsigned chars where:
-  *   - the first unsigned char entry stores the number of unsigned chars in the record
-  *   - the second entry stores the number of LUTs
-  * After this, several sub-records follow, each representing one LUT as follows:
-  *   - an unsigned char entry listing the number of fanins
-  *   - a list of fanins, from the LSB to the MSB of the truth table. The N inputs of the original function
-  *     have indexes from 0 to N-1, followed by the internal signals in a topological order
-  *   - the LUT truth table occupying 2^(M-3) bytes, where M is the fanin count of the LUT, from the LSB to the MSB.
-  *     A 2-input LUT, which takes 4 bits, should be stretched to occupy 8 bits (one unsigned char)
-  *     A 0- or 1-input LUT can be represented similarly but it is not expected that such LUTs will be represented
+   *
+   * The record is an array of unsigned chars where:
+   *   - the first unsigned char entry stores the number of unsigned chars in the record
+   *   - the second entry stores the number of LUTs
+   * After this, several sub-records follow, each representing one LUT as follows:
+   *   - an unsigned char entry listing the number of fanins
+   *   - a list of fanins, from the LSB to the MSB of the truth table. The N inputs of the original function
+   *     have indexes from 0 to N-1, followed by the internal signals in a topological order
+   *   - the LUT truth table occupying 2^(M-3) bytes, where M is the fanin count of the LUT, from the LSB to the MSB.
+   *     A 2-input LUT, which takes 4 bits, should be stretched to occupy 8 bits (one unsigned char)
+   *     A 0- or 1-input LUT can be represented similarly but it is not expected that such LUTs will be represented
    */
   void get_decomposition_abc( unsigned char* decompArray )
   {
@@ -2052,7 +2051,7 @@ private:
   uint32_t best_multiplicity{ UINT32_MAX };
   uint32_t best_free_set{ UINT32_MAX };
   STT best_tt;
-  STT  best_tt_cs;
+  STT best_tt_cs;
   std::vector<STT> best_bound_sets;
   std::vector<STT> best_care_sets;
   std::vector<STT> best_free_set_tts;
