@@ -197,12 +197,12 @@ private:
         [this]( STT const& tt ) { return column_multiplicity5<4u>( tt ); },
         [this]( STT const& tt ) { return column_multiplicity5<5u>( tt ); } };
 
-    std::function<uint32_t( STT const& tt, STT const& cs )> column_multiplicity_fn_dc[5] = {
-        [this]( STT const& tt, STT const& cs ) { return column_multiplicity_dc1<1u>( tt, cs ); },
-        [this]( STT const& tt, STT const& cs ) { return column_multiplicity_dc2<2u>( tt, cs ); },
-        [this]( STT const& tt, STT const& cs ) { return column_multiplicity_dc5<3u>( tt, cs ); },
-        [this]( STT const& tt, STT const& cs ) { return column_multiplicity_dc5<4u>( tt, cs ); },
-        [this]( STT const& tt, STT const& cs ) { return column_multiplicity_dc5<5u>( tt, cs ); } };
+    std::function<uint32_t( STT const& tt, STT const& cs, uint32_t loc_cost )> column_multiplicity_fn_dc[5] = {
+        [this]( STT const& tt, STT const& cs, uint32_t loc_cost ) { return column_multiplicity_dc1<1u>( tt, cs, loc_cost ); },
+        [this]( STT const& tt, STT const& cs, uint32_t loc_cost ) { return column_multiplicity_dc2<2u>( tt, cs, loc_cost ); },
+        [this]( STT const& tt, STT const& cs, uint32_t loc_cost ) { return column_multiplicity_dc5<3u>( tt, cs, loc_cost ); },
+        [this]( STT const& tt, STT const& cs, uint32_t loc_cost ) { return column_multiplicity_dc5<4u>( tt, cs, loc_cost ); },
+        [this]( STT const& tt, STT const& cs, uint32_t loc_cost ) { return column_multiplicity_dc5<5u>( tt, cs, loc_cost ); } };
 
     /* find a feasible AC decomposition */
     for ( uint32_t i = start; i <= ps.lut_size - 1 && i <= ps.max_free_set_vars; ++i )
@@ -392,7 +392,7 @@ private:
   }
 
   template<uint32_t free_set_size, bool manipulate = false>
-  uint32_t column_multiplicity_dc1( STT const& tt, STT const& cs )
+  uint32_t column_multiplicity_dc1( STT const& tt, STT const& cs, uint32_t loc_cost )
   {
     static_assert( free_set_size == 1, "Expected free_set_size to be 1 for DC1 optimization." );
 
@@ -604,7 +604,7 @@ private:
 
   // Compute the minimal column multiplicity with optional TT manipulation for free_set_size = 2
   template<uint32_t free_set_size, bool manipulate = false>
-  uint32_t column_multiplicity_dc2( const STT& tt, const STT& cs )
+  uint32_t column_multiplicity_dc2( const STT& tt, const STT& cs, uint32_t loc_cost )
   {
     static_assert( free_set_size == 2, "Wrong free set size for method used, expected 2" );
 
@@ -659,6 +659,11 @@ private:
         tt_block >>= 4;
         cs_block >>= 4;
       }
+    }
+
+    if ( __builtin_popcountll( selected_set ) >= loc_cost )
+    {
+      return UINT32_MAX;
     }
 
     uncovered_mask = ~uncovered_mask & dc_set;
@@ -778,7 +783,7 @@ private:
   }
 
   template<uint32_t free_set_size, bool manipulate = false>
-  uint32_t column_multiplicity_dc5( STT const& tt, STT const& cs )
+  uint32_t column_multiplicity_dc5( STT const& tt, STT const& cs, uint32_t loc_cost )
   {
     uint32_t const num_blocks = ( num_vars > 6 ) ? ( 1u << ( num_vars - 6 ) ) : 1;
     uint64_t constexpr masks[] = { 0x0, 0x3, 0xF, 0xFF, 0xFFFF, 0xFFFFFFFF };
@@ -837,6 +842,10 @@ private:
         base_set[unique_size++] = base_set[i];
       }
     }
+    if ( unique_size >= loc_cost )
+    {
+      return UINT32_MAX;
+    }
     // uint32_t unique_size = std::unique( base_set.begin(), base_set.begin() + size ) - base_set.begin();
 
     for ( uint32_t i = 0; i < partial_size; ++i )
@@ -867,6 +876,10 @@ private:
       if ( !matched )
       {
         base_set[unique_size++] = partial_fn[i];
+        if ( unique_size >= loc_cost )
+        {
+          return UINT32_MAX;
+        }
       }
     }
 
@@ -960,7 +973,7 @@ private:
     /* special case */
     if ( free_set_size == offset )
     {
-      best_cost = fn( tt, cs );
+      best_cost = fn( tt, cs, best_cost );
       return { tt, permutations, best_cost };
     }
 
@@ -988,7 +1001,7 @@ private:
     /* enumerate combinations */
     do
     {
-      uint32_t cost = fn( tt, cs );
+      uint32_t cost = fn( tt, cs, best_cost );
       if ( cost < best_cost )
       {
         local_best_tt = tt;
