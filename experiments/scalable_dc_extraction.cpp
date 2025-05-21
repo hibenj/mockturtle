@@ -2,13 +2,13 @@
 #include <iostream>
 #include <string>
 
+#include <experiments.hpp>
 #include <fmt/format.h>
 #include <lorina/aiger.hpp>
 #include <lorina/genlib.hpp>
+#include <mockturtle/algorithms/cut_enumeration.hpp>
 #include <mockturtle/io/aiger_reader.hpp>
 #include <mockturtle/networks/aig.hpp>
-#include <mockturtle/algorithms/cut_enumeration.hpp>
-#include <experiments.hpp>
 
 #include <chrono>
 #include <mockturtle/algorithms/reconv_cut.hpp>
@@ -18,6 +18,8 @@
 #include <mockturtle/views/depth_view.hpp>
 #include <mockturtle/views/fanout_view.hpp>
 #include <mockturtle/views/window_view.hpp>
+#include <mockturtle/io/write_dot.hpp>
+#include <mockturtle/algorithms/scalable_dc.hpp>
 
 using namespace experiments;
 using namespace mockturtle;
@@ -57,7 +59,7 @@ void write_word_to_file_cs( uint64_t word )
 }
 
 template<typename Ntk>
-kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std::vector<mockturtle::node<Ntk>>& leaves )
+kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std::vector<mockturtle::node<Ntk>>& leaves, uint32_t it )
 {
   static constexpr uint32_t window_size = 14;
   static constexpr uint32_t max_window_size = 14;
@@ -69,28 +71,40 @@ kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std:
 
   mockturtle::color_view<Ntk> color_ntk{ ntk };
 
-  std::vector<mockturtle::node<Ntk>> roots = {  index };
+  std::vector<mockturtle::node<Ntk>> roots = { index };
   auto const extended_leaves = reconv_cuts.run( roots ).first;
 
-  auto depth_ntk = mockturtle::depth_view(mockturtle::fanout_view(color_ntk));
-  create_window_impl windowing(depth_ntk);
-  const auto res = windowing.run(roots[0], window_size, 5);
+  auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
+  create_window_impl windowing( depth_ntk );
+  const auto res = windowing.run( roots[0], window_size, 8 );
 
   if ( res != std::nullopt )
   {
     int zz = 0;
   }
+  else
+  {
+    std::cout << "Leaves size: " << leaves.size() << ", Extended Leaves size: " << extended_leaves.size() << std::endl;
+    int zz = 1;
+  }
 
   std::vector<mockturtle::node<Ntk>> gates{ collect_nodes( color_ntk, extended_leaves, roots ) };
   window_view window_ntk{ color_ntk, extended_leaves, roots, gates };
 
-  if ( leaves.size() == extended_leaves.size() )
+  if ( it == 100 )
   {
-    std::cout << "Happens\n";
-    kitty::dynamic_truth_table care = kitty::dynamic_truth_table( leaves.size() );
-    return ~care;
+    std::ofstream file( "window.dot" );
+    write_dot( window_ntk, file );
+    file.close();
+
+    std::vector<mockturtle::node<Ntk>> gates2{ collect_nodes( color_ntk, leaves, roots ) };
+    window_view window_ntk2{ color_ntk, leaves, roots, gates2 };
+
+    std::ofstream file2( "cut.dot" );
+    write_dot( window_ntk2, file2 );
+    file2.close();
   }
-  std::cout << "Leaves size: " << leaves.size() << ", Extended Leaves size: " << extended_leaves.size() << std::endl;
+  // std::cout << "Leaves size: " << leaves.size() << ", Extended Leaves size: " << extended_leaves.size() << std::endl;
 
   // dont cares computation
   kitty::dynamic_truth_table care = kitty::dynamic_truth_table( leaves.size() );
@@ -141,10 +155,10 @@ int main()
     {
       continue;
     }*/
-    /*if ( benchmark != "hyp" )
+    if ( benchmark != "adder" )
     {
       continue;
-    }*/
+    }
     /*if ( benchmark != "log2" )
     {
       continue;
@@ -197,17 +211,21 @@ int main()
 
         const auto tt = cuts.truth_table( *cut );
         std::vector<mockturtle::node<aig_network>> leaves;
-        for (const auto& l : *cut)
+        for ( const auto& l : *cut )
         {
-          leaves.push_back(l);
+          leaves.push_back( l );
         }
-        const auto care = compute_care_set( aig, index, leaves );
+        if ( num_cuts == 300 )
+        {
+          int zz = 0;
+        }
+        const auto care = compute_care_set( aig, index, leaves, num_cuts );
 
         uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
         for ( uint32_t i = 0; i < num_blocks; ++i )
         {
           const auto c = care._bits[i];
-          num_dcs += static_cast<uint32_t>(64 - std::__popcount(c)); // count unset bits
+          num_dcs += static_cast<uint32_t>( 64 - std::__popcount( c ) ); // count unset bits
         }
 
         /*for ( uint32_t i = 0; i < num_blocks; ++i )
@@ -231,7 +249,6 @@ int main()
     // break;
     exp( benchmark, aig.num_pis(), aig.size(), num_cuts );
 
-    break;
   }
   auto end = std::chrono::high_resolution_clock::now();
 
