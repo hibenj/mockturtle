@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <mockturtle/algorithms/reconv_cut.hpp>
+#include <mockturtle/algorithms/scalable_dc.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/generators/arithmetic.hpp>
 #include <mockturtle/io/write_dot.hpp>
@@ -32,73 +33,112 @@ std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, 
   const auto pi13 = aig.create_pi();
   const auto pi14 = aig.create_pi();
   //
-  const auto n16 = aig.create_and(pi1, pi2);
-  const auto n15 = aig.create_and(!pi1, !pi2);
-  const auto n27 = aig.create_and(pi13, pi14);
-  const auto n25 = aig.create_and(pi11, pi12);
-  const auto n24 = aig.create_and(!pi11, !pi12);
-  const auto n30 = aig.create_and(pi9, pi10);
-  const auto n23 = aig.create_and(!pi9, !pi10);
-  const auto n34 = aig.create_and(pi7, pi8);
-  const auto n22 = aig.create_and(!pi7, !pi8);
-  const auto n20 = aig.create_and(pi5, pi6);
-  const auto n19 = aig.create_and(!pi5, !pi6);
-  const auto n40 = aig.create_and(pi3, pi4);
-  const auto n18 = aig.create_and(!pi3, !pi4);
+  const auto n16 = aig.create_and( pi1, pi2 );
+  const auto n15 = aig.create_and( !pi1, !pi2 );
+  const auto n27 = aig.create_and( pi13, pi14 );
+  const auto n25 = aig.create_and( pi11, pi12 );
+  const auto n24 = aig.create_and( !pi11, !pi12 );
+  const auto n30 = aig.create_and( pi9, pi10 );
+  const auto n23 = aig.create_and( !pi9, !pi10 );
+  const auto n34 = aig.create_and( pi7, pi8 );
+  const auto n22 = aig.create_and( !pi7, !pi8 );
+  const auto n20 = aig.create_and( pi5, pi6 );
+  const auto n19 = aig.create_and( !pi5, !pi6 );
+  const auto n40 = aig.create_and( pi3, pi4 );
+  const auto n18 = aig.create_and( !pi3, !pi4 );
   //
-  const auto n17 = aig.create_and(!n16, !n15);
-  const auto n26 = aig.create_and(!n25, !n24);
-  const auto n31 = aig.create_and(!n30, !n23);
-  const auto n35 = aig.create_and(!n34, !n22);
-  const auto n21 = aig.create_and(!n20, !n19);
-  const auto n41 = aig.create_and(!n40, !n18);
+  const auto n17 = aig.create_and( !n16, !n15 );
+  const auto n26 = aig.create_and( !n25, !n24 );
+  const auto n31 = aig.create_and( !n30, !n23 );
+  const auto n35 = aig.create_and( !n34, !n22 );
+  const auto n21 = aig.create_and( !n20, !n19 );
+  const auto n41 = aig.create_and( !n40, !n18 );
   //
-  const auto n28 = aig.create_and(!n27, n26);
-  const auto n29 = aig.create_and(!n28, !n24);
-  const auto n32 = aig.create_and(!n29, n31);
-  const auto n33 = aig.create_and(!n32, !n23);
-  const auto n36 = aig.create_and(!n33, n35);
-  const auto n37 = aig.create_and(!n36, !n22);
-  const auto n38 = aig.create_and(!n37, n21);
-  const auto n39 = aig.create_and(!n38, !n19);
-  const auto n42 = aig.create_and(!n39, n41);
-  const auto n43 = aig.create_and(!n42, !n18);
+  const auto n28 = aig.create_and( !n27, n26 );
+  const auto n29 = aig.create_and( !n28, !n24 );
+  const auto n32 = aig.create_and( !n29, n31 );
+  const auto n33 = aig.create_and( !n32, !n23 );
+  const auto n36 = aig.create_and( !n33, n35 );
+  const auto n37 = aig.create_and( !n36, !n22 );
+  const auto n38 = aig.create_and( !n37, n21 );
+  const auto n39 = aig.create_and( !n38, !n19 );
+  const auto n42 = aig.create_and( !n39, n41 );
+  const auto n43 = aig.create_and( !n42, !n18 );
   //
-  const auto n44 = aig.create_and(n17, !n43);
-  const auto n45 = aig.create_and(!n44, !n15);
+  const auto n44 = aig.create_and( n17, !n43 );
+  const auto n45 = aig.create_and( !n44, !n15 );
 
-  aig.create_po(n45);
+  aig.create_po( n45 );
 
   std::vector<mockturtle::node<aig_network>> leaves{};
-  leaves.push_back(aig.get_node(n15));
-  leaves.push_back(aig.get_node(n17));
-  leaves.push_back(aig.get_node(n18));
-  leaves.push_back(aig.get_node(n40));
-  leaves.push_back(aig.get_node(pi5));
-  leaves.push_back(aig.get_node(pi6));
-  leaves.push_back(aig.get_node(n37));
+  leaves.push_back( aig.get_node( n15 ) );
+  leaves.push_back( aig.get_node( n17 ) );
+  leaves.push_back( aig.get_node( n18 ) );
+  leaves.push_back( aig.get_node( n40 ) );
+  leaves.push_back( aig.get_node( pi5 ) );
+  leaves.push_back( aig.get_node( pi6 ) );
+  leaves.push_back( aig.get_node( n37 ) );
 
-  std::cout << "PI1: " << aig.node_to_index( aig.get_node(pi1) ) << std::endl;
-  std::cout << "PI2: " << aig.node_to_index( aig.get_node(pi2) ) << std::endl;
-  std::cout << "PI3: " << aig.node_to_index( aig.get_node(pi3) ) << std::endl;
-  std::cout << "PI4: " << aig.node_to_index( aig.get_node(pi4) ) << std::endl;
+  const auto index = aig.node_to_index( aig.get_node( n45 ) );
 
-  const auto index = aig.node_to_index( aig.get_node(n45) );
-
-  return std::make_tuple(aig, leaves, index);
+  return std::make_tuple( aig, leaves, index );
 }
 
-uint32_t count_zeros(const kitty::dynamic_truth_table& tt)
+std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, uint32_t> create_cut2()
+{
+  aig_network aig{};
+  const auto pi1 = aig.create_pi();
+  const auto pi2 = aig.create_pi();
+  const auto pi3 = aig.create_pi();
+  const auto pi4 = aig.create_pi();
+  const auto pi5 = aig.create_pi();
+  const auto n1 = aig.create_and( pi1, pi2 );
+  const auto n2 = aig.create_and( !pi2, !pi3 );
+  const auto n3 = aig.create_and( n1, n2 );
+  const auto n4 = aig.create_and( pi4, pi5 );
+  const auto n5 = aig.create_and( n3, n4 );
+  aig.create_po( n5 );
+
+  std::vector<mockturtle::node<aig_network>> leaves{};
+  leaves.push_back( aig.get_node( n1 ) );
+  leaves.push_back( aig.get_node( n2 ) );
+  leaves.push_back( aig.get_node( n4 ) );
+
+  const auto index = aig.node_to_index( aig.get_node( n5 ) );
+
+  return std::make_tuple( aig, leaves, index );
+}
+
+std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, uint32_t> create_cut_free()
+{
+  aig_network aig{};
+  const auto pi1 = aig.create_pi();
+  const auto pi2 = aig.create_pi();
+  const auto n1 = aig.create_and( pi1, pi2 );
+  const auto n2 = aig.create_and( !pi1, !pi2 );
+  const auto n3 = aig.create_and( n1, n2 );
+  aig.create_po( n3 );
+
+  std::vector<mockturtle::node<aig_network>> leaves{};
+  leaves.push_back( aig.get_node( n1 ) );
+  leaves.push_back( aig.get_node( n2 ) );
+
+  const auto index = aig.node_to_index( aig.get_node( n3 ) );
+
+  return std::make_tuple( aig, leaves, index );
+}
+
+uint32_t count_zeros( const kitty::dynamic_truth_table& tt )
 {
   uint32_t count = 0;
   const uint32_t num_bits = tt.num_bits();
 
-  const auto& bits = tt._bits;  // Access the internal bit vector
+  const auto& bits = tt._bits; // Access the internal bit vector
 
-  for (uint32_t i = 0; i < num_bits; ++i)
+  for ( uint32_t i = 0; i < num_bits; ++i )
   {
-    const bool bit_set = (bits[i / 64] >> (i % 64)) & 1;
-    if (!bit_set)
+    const bool bit_set = ( bits[i / 64] >> ( i % 64 ) ) & 1;
+    if ( !bit_set )
       ++count;
   }
 
@@ -106,7 +146,7 @@ uint32_t count_zeros(const kitty::dynamic_truth_table& tt)
 }
 
 template<typename Ntk>
-kitty::dynamic_truth_table simulate_window( Ntk ntk, uint32_t index, const std::vector<mockturtle::node<Ntk>>& leaves)
+kitty::dynamic_truth_table simulate_window( Ntk ntk, uint32_t index, const std::vector<mockturtle::node<Ntk>>& leaves )
 {
   static constexpr uint32_t window_size = 14;
   static constexpr uint32_t max_window_size = 14;
@@ -122,17 +162,17 @@ kitty::dynamic_truth_table simulate_window( Ntk ntk, uint32_t index, const std::
   auto const extended_leaves = reconv_cuts.run( roots ).first;
 
   std::vector<mockturtle::node<Ntk>> test_leaves{};
-  test_leaves.push_back(1);
-  test_leaves.push_back(2);
-  test_leaves.push_back(3);
-  test_leaves.push_back(4);
-  test_leaves.push_back(5);
-  test_leaves.push_back(6);
-  test_leaves.push_back(39);
+  test_leaves.push_back( 1 );
+  test_leaves.push_back( 2 );
+  test_leaves.push_back( 3 );
+  test_leaves.push_back( 4 );
+  test_leaves.push_back( 5 );
+  test_leaves.push_back( 6 );
+  test_leaves.push_back( 39 );
 
-  //auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
-  //create_window_impl windowing( depth_ntk );
-  //const auto res = windowing.run( roots[0], window_size, 8 );
+  auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
+  create_window_impl windowing( depth_ntk );
+  const auto res = windowing.run( roots[0], window_size, 8 );
 
   std::vector<mockturtle::node<Ntk>> gates{ collect_nodes( color_ntk, extended_leaves, roots ) };
   window_view window_ntk{ color_ntk, extended_leaves, roots, gates };
@@ -189,16 +229,89 @@ kitty::dynamic_truth_table simulate_window( Ntk ntk, uint32_t index, const std::
   return care;
 }
 
-TEST_CASE( "Find multiple windows", "[scalable_dc]" )
+template<typename Ntk>
+void print_fi_relations( Ntk const& ntk )
+{
+  ntk.foreach_node( [&]( auto const& n ) {
+    if ( ntk.is_constant( n ) )
+      return; // skip constant node
+
+    std::cout << "Node " << ntk.node_to_index( n ) << " <- { ";
+
+    ntk.foreach_fanin( n, [&]( auto const& fi ) {
+      auto fn = ntk.get_node( fi );
+      std::cout << ntk.node_to_index( fn ) << " ";
+    } );
+
+    std::cout << "}\n";
+  } );
+}
+
+TEST_CASE( "Find single window", "[scalable_dc]" )
 {
   auto start = std::chrono::high_resolution_clock::now();
-  auto [aig, leaves, index] = create_cut();
+  auto [aig, leaves, index] = create_cut2();
 
-  const auto care = simulate_window(aig, index, leaves);
+  const auto care = simulate_window( aig, index, leaves );
 
-  const auto zeros = count_zeros(care);
+  const auto zeros = count_zeros( care );
   std::cout << "Num Zeros: " << zeros << std::endl;
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed_seconds = end - start;
   std::cout << "Execution time: " << elapsed_seconds.count() << "s\n";
+}
+
+TEST_CASE( "Find multiple windows", "[scalable_dc]" )
+{
+  auto start = std::chrono::high_resolution_clock::now();
+  auto [aig, leaves, index] = create_cut2();
+
+  mockturtle::color_view<aig_network> color_ntk{ aig };
+
+  print_fi_relations( color_ntk );
+
+  create_dc_windows_impl cut_window( color_ntk );
+  cut_window.run( leaves, 5 );
+
+  kitty::dynamic_truth_table global_care(leaves.size());
+  global_care = ~global_care;
+  for ( const auto& w : cut_window )
+  {
+    kitty::dynamic_truth_table care = kitty::dynamic_truth_table( w.outputs.size() );
+    window_view window_ntk{ color_ntk, w.inputs, w.outputs, w.nodes };
+    default_simulator<kitty::dynamic_truth_table> sim( w.inputs.size() );
+    const auto tts = simulate_nodes<kitty::dynamic_truth_table>( window_ntk, sim );
+    for ( auto i = 0u; i < ( 1u << window_ntk.num_pis() ); ++i )
+    {
+      uint32_t entry{ 0u };
+      auto j = 0u;
+      for ( auto const& l : w.outputs )
+      {
+        entry |= kitty::get_bit( tts[l], i ) << j;
+        ++j;
+      }
+      kitty::set_bit( care, entry );
+    }
+
+    // don't care set
+    care = ~care;
+
+    std::vector<kitty::dynamic_truth_table> vars;
+    for (auto const& l : w.outputs)
+    {
+      auto it = std::find(leaves.begin(), leaves.end(), aig.get_node(l));
+      assert(it != leaves.end()); // ensure l is in leaves
+      uint32_t idx = std::distance(leaves.begin(), it);
+
+      kitty::dynamic_truth_table var (leaves.size());
+      kitty::create_nth_var(var, idx);
+      vars.push_back( var );
+    }
+    const auto global_dc = kitty::compose_truth_table(care, vars);
+    global_care &= ~global_dc;
+
+    int z = 0;
+  }
+
+  int z = 0;
 }

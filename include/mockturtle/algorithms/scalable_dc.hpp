@@ -35,8 +35,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <queue>
 #include <set>
 #include <type_traits>
+#include <unordered_set>
 #include <vector>
 
 namespace mockturtle
@@ -64,7 +66,9 @@ protected:
 
 public:
   explicit create_dc_windows_impl( Ntk const& ntk )
-      : ntk( ntk ), path( ntk.size() ), refs( ntk.size() )
+      : ntk( ntk ),
+        path( ntk.size() ),
+        refs( ntk.size() )
   {
   }
 
@@ -74,33 +78,266 @@ public:
     refs.resize( size );
   }
 
+  auto begin() const { return windows.begin(); }
+  auto end() const { return windows.end(); }
+
+  void mark_nodes( std::vector<node> const& leaves, uint32_t num_levels )
+  {
+    for ( uint32_t i = 0; i < leaves.size(); ++i )
+    {
+      node const& leaf = leaves[i];
+      uint64_t const bit = uint64_t( 1 ) << i;
+
+      std::queue<std::pair<node, uint32_t>> queue;
+      queue.emplace( leaf, 0 );
+
+      while ( !queue.empty() )
+      {
+        auto [n, level] = queue.front();
+        queue.pop();
+
+        if ( level > num_levels )
+          continue;
+
+        if ( ( visited[n] & bit ) != 0 )
+          continue; // already marked for this leaf
+
+        visited[n] |= bit;
+
+        ntk.foreach_fanin( n, [&]( signal const& fi ) {
+          queue.emplace( ntk.get_node( fi ), level + 1 );
+        } );
+      }
+    }
+  }
+
+  bool can_expand_for_free( const node& n )
+  {
+    if ( ntk.is_constant( n ) || ntk.is_ci( n ) )
+      return false; // constants or PIs cannot be expanded
+
+    uint32_t count_visited_fanins = 0;
+
+    ntk.foreach_fanin( n, [&]( auto const& fi ) {
+      auto const fn = ntk.get_node( fi );
+      if ( ntk.eval_color( fn, [&]( auto c ) { return c == ntk.current_color(); } ) )
+        ++count_visited_fanins;
+    } );
+
+    return ( count_visited_fanins + 1 >= ntk.fanin_size( n ) );
+  }
+
+  std::vector<uint64_t> get_leaves()
+  {
+    std::vector<uint64_t> groups;
+
+    std::vector<uint64_t> bitsets;
+    for ( auto const& [n, bits] : visited )
+    {
+      assert( bits != 0 );
+      bitsets.push_back( bits );
+    }
+
+    std::vector<bool> merged( bitsets.size(), false );
+
+    for ( size_t i = 0; i < bitsets.size(); ++i )
+    {
+      if ( merged[i] )
+        continue;
+
+      uint64_t group = bitsets[i];
+      merged[i] = true;
+
+      size_t merge_border = bitsets.size();
+      bool grew = true;
+      while ( grew )
+      {
+        grew = false;
+        size_t upper_border = merge_border;
+        for ( size_t j = i + 1; j < upper_border; ++j )
+        {
+          if ( merged[j] )
+            continue;
+
+          if ( ( group & bitsets[j] ) != 0 )
+          {
+            uint64_t old_group = group;
+            group |= bitsets[j];
+            merged[j] = true;
+
+            if ( std::__popcount( group ) > std::__popcount( old_group ) )
+            {
+              grew = true;
+              merge_border = j + 1;
+            }
+          }
+        }
+      }
+
+      groups.push_back( group );
+    }
+
+    return groups;
+  }
+
+  bool expand_cut_zero_cost( std::vector<node>& inputs )
+  {
+    bool changed = false;
+    std::vector<node> new_inputs;
+
+    for ( auto it = inputs.begin(); it != inputs.end(); )
+    {
+      if ( !can_expand_for_free( *it ) )
+      {
+        ++it;
+        continue;
+      }
+
+      ntk.foreach_fanin( *it, [&]( auto const& fi ) {
+        node fn = ntk.get_node( fi );
+        if ( !ntk.eval_color( fn, [&]( auto c ) { return c == ntk.current_color(); } ) )
+        {
+          ntk.paint( fn );
+          new_inputs.push_back( fn ); // stage new nodes safely
+        }
+      } );
+
+      it = inputs.erase( it ); // remove expanded node
+      changed = true;
+    }
+
+    // Safely add new nodes after loop
+    inputs.insert( inputs.end(), new_inputs.begin(), new_inputs.end() );
+
+    return changed;
+  }
+
+  bool expand_cut_information( std::vector<node>& inputs )
+  {
+    bool changed = false;
+    std::vector<node> new_inputs;
+
+    for ( auto it = inputs.begin(); it != inputs.end(); )
+    {
+      const auto visited_pop = __builtin_popcountll( visited[*it] );
+      bool should_expand = false;
+
+      std::unordered_set<node> seen;
+      std::queue<node> queue;
+      queue.push( *it );
+
+      while ( !queue.empty() )
+      {
+        node n = queue.front();
+        queue.pop();
+
+        if ( visited.find( n ) == visited.end() || visited[n] == 0 )
+          continue;
+
+        if ( !seen.insert( n ).second )
+          continue;
+
+        if ( __builtin_popcountll( visited[n] ) > visited_pop )
+        {
+          should_expand = true;
+          break;
+        }
+
+        ntk.foreach_fanin( n, [&]( auto const& fi ) {
+          queue.push( ntk.get_node( fi ) );
+        } );
+      }
+
+      if ( !should_expand )
+      {
+        ++it;
+        continue;
+      }
+
+      // Expand node
+      ntk.foreach_fanin( *it, [&]( signal const& fi ) {
+        node const& fn = ntk.get_node( fi );
+        if ( ntk.visited( fn ) != ntk.trav_id() )
+        {
+          ntk.paint( fn );
+          new_inputs.push_back( fn );
+        }
+      } );
+
+      it = inputs.erase( it ); // erase the expanded node
+      changed = true;
+    }
+
+    // Append staged nodes after loop finishes
+    inputs.insert( inputs.end(), new_inputs.begin(), new_inputs.end() );
+
+    return changed;
+  }
+  void build_window( std::vector<node> const& leaves, uint64_t leave_set )
+  {
+    std::vector<node> inputs;
+    std::vector<signal> outputs;
+
+    ntk.new_color(); // Reset color before marking
+
+    std::cout << "Set\n";
+    uint64_t bits = leave_set;
+    while ( bits != 0 )
+    {
+      uint32_t i = __builtin_ctzll( bits ); // Index of the least-significant flipped bit
+      bits &= bits - 1;                     // Clear the lowest flipped bit
+
+      node const& leaf = leaves[i];
+      inputs.push_back( leaf );
+      outputs.push_back( ntk.make_signal( leaf ) );
+      ntk.paint( leaf );
+      std::cout << leaf << std::endl;
+    }
+    const auto roots = inputs;
+
+    bool changed = true;
+    while ( changed )
+    {
+      changed = false;
+
+      // Step 2: zero-cost expansion
+      if ( expand_cut_zero_cost( inputs ) )
+        changed = true;
+
+      // Step 3: information-driven expansion
+      if ( expand_cut_information( inputs ) )
+        changed = true;
+    }
+
+    const auto nodes = collect_nodes( ntk, inputs, roots );
+
+    windows.push_back( window{ inputs, nodes, outputs } );
+  }
+
   void run( std::vector<node> const& leaves, uint32_t num_levels )
   {
-    windows.clear(); // clear any previous state
+    windows.clear(); // clear previous state
 
-    for ( const auto& leaf : leaves )
+    mark_nodes( leaves, num_levels );
+
+    const auto window_leaves = get_leaves();
+
+    for ( const auto& leave_set : window_leaves )
     {
-      window w;
-
-      // Dummy window content
-      w.inputs.push_back( leaf );
-      w.nodes.push_back( leaf );
-
-      // Create a constant false signal as dummy output
-      w.outputs.push_back( ntk.get_constant( false ) );
-
-      windows.push_back( std::move( w ) );
+      build_window( leaves, leave_set );
     }
+
+    int z = 0;
   }
 
 protected:
   Ntk const& ntk;
-  std::vector<node> visited;
   std::vector<node> path;
   std::vector<uint32_t> refs;
   std::vector<std::vector<node>> levels;
 
   std::vector<window> windows;
+  std::unordered_map<node, uint64_t> visited;
 };
 
 } // namespace mockturtle
