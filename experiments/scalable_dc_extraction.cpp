@@ -12,17 +12,30 @@
 
 #include <chrono>
 #include <mockturtle/algorithms/reconv_cut.hpp>
+#include <mockturtle/algorithms/scalable_dc.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
+#include <mockturtle/io/write_dot.hpp>
 #include <mockturtle/utils/window_utils.hpp>
 #include <mockturtle/views/color_view.hpp>
 #include <mockturtle/views/depth_view.hpp>
 #include <mockturtle/views/fanout_view.hpp>
 #include <mockturtle/views/window_view.hpp>
-#include <mockturtle/io/write_dot.hpp>
-#include <mockturtle/algorithms/scalable_dc.hpp>
 
 using namespace experiments;
 using namespace mockturtle;
+
+uint32_t count_zeros( const kitty::dynamic_truth_table& tt, uint32_t cut_size )
+{
+  uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
+  uint32_t count = 0;
+  for ( uint32_t i = 0; i < num_blocks; ++i )
+  {
+    const auto c = tt._bits[i];
+    count += static_cast<uint32_t>( 64 - std::__popcount( c ) ); // count unset bits
+  }
+
+  return count;
+}
 
 void write_word_to_file( uint64_t word )
 {
@@ -74,24 +87,14 @@ kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std:
   std::vector<mockturtle::node<Ntk>> roots = { index };
   auto const extended_leaves = reconv_cuts.run( roots ).first;
 
-  auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
+  /*auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
   create_window_impl windowing( depth_ntk );
-  const auto res = windowing.run( roots[0], window_size, 8 );
-
-  if ( res != std::nullopt )
-  {
-    int zz = 0;
-  }
-  else
-  {
-    std::cout << "Leaves size: " << leaves.size() << ", Extended Leaves size: " << extended_leaves.size() << std::endl;
-    int zz = 1;
-  }
+  const auto res = windowing.run( roots[0], window_size, 8 );*/
 
   std::vector<mockturtle::node<Ntk>> gates{ collect_nodes( color_ntk, extended_leaves, roots ) };
   window_view window_ntk{ color_ntk, extended_leaves, roots, gates };
 
-  if ( it == 100 )
+  /*if ( it == 99 )
   {
     std::ofstream file( "window.dot" );
     write_dot( window_ntk, file );
@@ -103,7 +106,7 @@ kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std:
     std::ofstream file2( "cut.dot" );
     write_dot( window_ntk2, file2 );
     file2.close();
-  }
+  }*/
   // std::cout << "Leaves size: " << leaves.size() << ", Extended Leaves size: " << extended_leaves.size() << std::endl;
 
   // dont cares computation
@@ -146,19 +149,20 @@ kitty::dynamic_truth_table compute_care_set( Ntk ntk, uint32_t index, const std:
 
 int main()
 {
-  experiment<std::string, uint32_t, uint32_t, uint32_t> exp( "Stats", "benchmark", "PIs", "Gates", "Cuts" );
+  experiment<std::string, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, double, double, double, double>
+      exp( "Stats", "benchmark", "PIs", "Gates", "Cuts", "DCs one window", "DCs multiple windows", "DC ratio", "Time one window", "Time multiple windows", "Time ratio" );
 
   auto start = std::chrono::high_resolution_clock::now();
   for ( auto& benchmark : epfl_benchmarks() )
   {
-    /*if ( benchmark != "div" )
+    /*if ( benchmark == "hyp" )
     {
       continue;
     }*/
-    if ( benchmark != "adder" )
+    /*if ( benchmark != "cavlc" )
     {
       continue;
-    }
+    }*/
     /*if ( benchmark != "log2" )
     {
       continue;
@@ -184,7 +188,8 @@ int main()
     {
       continue;
     }
-    /*if( aig.num_gates() > 16000 )
+
+    /*if( aig.num_gates() > 5000 )
     {
       continue;
     }*/
@@ -199,6 +204,9 @@ int main()
     fmt::print( "[i] cut enumeration finished {}\n", benchmark );
     uint32_t num_cuts = 0;
     uint32_t num_dcs = 0;
+    uint32_t num_scalable_dcs = 0;
+    std::chrono::duration<double> total_time_care_set{ 0 };
+    std::chrono::duration<double> total_time_scalable_dc{ 0 };
     aig_topo.foreach_gate( [&]( auto const& n ) {
       const auto index = aig_topo.node_to_index( n );
       for ( auto& cut : cuts.cuts( index ) )
@@ -215,18 +223,45 @@ int main()
         {
           leaves.push_back( l );
         }
-        if ( num_cuts == 300 )
-        {
-          int zz = 0;
-        }
+        auto start = std::chrono::steady_clock::now();
         const auto care = compute_care_set( aig, index, leaves, num_cuts );
+        auto end = std::chrono::steady_clock::now();
+        total_time_care_set += ( end - start );
+
+        start = std::chrono::steady_clock::now();
+        const auto scalable_care = scalable_dc( aig, leaves );
+        end = std::chrono::steady_clock::now();
+        total_time_scalable_dc += ( end - start );
 
         uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
         for ( uint32_t i = 0; i < num_blocks; ++i )
         {
           const auto c = care._bits[i];
           num_dcs += static_cast<uint32_t>( 64 - std::__popcount( c ) ); // count unset bits
+
+          const auto c_s = scalable_care._bits[i];                                  // 0xFFFFFFFFFFFFFFFF;
+          num_scalable_dcs += static_cast<uint32_t>( 64 - std::__popcount( c_s ) ); // count unset bits
         }
+
+        /*if ( care != scalable_care )
+        {
+          for ( uint32_t i = 0; i < num_blocks; ++i )
+          {
+            const auto care_bits = care._bits[i];
+            const auto scalable_bits = scalable_care._bits[i];
+            const auto zeros_care = count_zeros(care, cut_size);
+            const auto zeros_scalable = count_zeros(scalable_care, cut_size);
+            const auto diff = care_bits & scalable_bits;
+            if ( diff == scalable_bits )
+            {
+              std::cout << "better or equal\n";
+            }
+            else
+            {
+              std::cout << "worse\n";
+            }
+          }
+        }*/
 
         /*for ( uint32_t i = 0; i < num_blocks; ++i )
         {
@@ -246,9 +281,13 @@ int main()
     } );
     std::cout << "Num Cuts: " << num_cuts << std::endl;
     std::cout << "Num DCs: " << num_dcs << std::endl;
+    std::cout << "Num scalable DCs: " << num_scalable_dcs << std::endl;
+    std::cout << "Total time compute_care_set: " << total_time_care_set.count() << " s\n";
+    std::cout << "Total time scalable_dc: " << total_time_scalable_dc.count() << " s\n";
     // break;
-    exp( benchmark, aig.num_pis(), aig.size(), num_cuts );
-
+    const auto dcs_ratio = static_cast<double>( num_scalable_dcs ) / std::max<uint32_t>( 1, num_dcs );
+    const auto time_ratio = total_time_scalable_dc.count() / std::max( 1e-12, total_time_care_set.count() );
+    exp( benchmark, aig.num_pis(), aig.size(), num_cuts, num_dcs, num_scalable_dcs, dcs_ratio, total_time_care_set.count(), total_time_scalable_dc.count(), time_ratio );
   }
   auto end = std::chrono::high_resolution_clock::now();
 

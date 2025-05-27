@@ -32,6 +32,12 @@
 
 #pragma once
 
+#include <mockturtle/utils/window_utils.hpp>
+#include <mockturtle/views/color_view.hpp>
+#include <mockturtle/views/fanout_view.hpp>
+#include <mockturtle/views/window_view.hpp>
+#include "simulation.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <optional>
@@ -273,6 +279,7 @@ public:
 
     return changed;
   }
+
   void build_window( std::vector<node> const& leaves, uint64_t leave_set )
   {
     std::vector<node> inputs;
@@ -280,7 +287,7 @@ public:
 
     ntk.new_color(); // Reset color before marking
 
-    std::cout << "Set\n";
+    //std::cout << "Set\n";
     uint64_t bits = leave_set;
     while ( bits != 0 )
     {
@@ -291,7 +298,7 @@ public:
       inputs.push_back( leaf );
       outputs.push_back( ntk.make_signal( leaf ) );
       ntk.paint( leaf );
-      std::cout << leaf << std::endl;
+      //std::cout << leaf << std::endl;
     }
     const auto roots = inputs;
 
@@ -307,27 +314,33 @@ public:
       // Step 3: information-driven expansion
       if ( expand_cut_information( inputs ) )
         changed = true;
+
+      if ( inputs.size() > 13 )
+      {
+        break;
+      }
     }
 
-    const auto nodes = collect_nodes( ntk, inputs, roots );
+    if ( changed != true )
+    {
+      const auto nodes = collect_nodes( ntk, inputs, roots );
 
-    windows.push_back( window{ inputs, nodes, outputs } );
+      windows.push_back( window{ inputs, nodes, outputs } );
+    }
   }
 
   void run( std::vector<node> const& leaves, uint32_t num_levels )
   {
     windows.clear(); // clear previous state
 
-    mark_nodes( leaves, num_levels );
+    mark_nodes( leaves, num_levels ); // traverse from the leaves through the TFI and mark as visited
 
-    const auto window_leaves = get_leaves();
+    const auto window_leaves = get_leaves(); // leaves that appear at common nodes are merged into one window
 
     for ( const auto& leave_set : window_leaves )
     {
-      build_window( leaves, leave_set );
+      build_window( leaves, leave_set ); // build a window for each independent leave_set
     }
-
-    int z = 0;
   }
 
 protected:
@@ -339,5 +352,57 @@ protected:
   std::vector<window> windows;
   std::unordered_map<node, uint64_t> visited;
 };
+
+template<typename Ntk>
+kitty::dynamic_truth_table scalable_dc(const Ntk& ntk, std::vector<typename Ntk::node> const& leaves, uint32_t num_levels = 12)
+{
+  mockturtle::color_view<Ntk> color_ntk{ntk};
+
+  create_dc_windows_impl<decltype(color_ntk)> cut_window(color_ntk);
+  cut_window.run(leaves, num_levels);
+
+  kitty::dynamic_truth_table global_care(leaves.size());
+  global_care = ~global_care;
+
+  for (const auto& w : cut_window)
+  {
+    kitty::dynamic_truth_table care(w.outputs.size());
+    window_view window_ntk{color_ntk, w.inputs, w.outputs, w.nodes};
+
+    default_simulator<kitty::dynamic_truth_table> sim(w.inputs.size());
+    const auto tts = simulate_nodes<kitty::dynamic_truth_table>(window_ntk, sim);
+
+    for (auto i = 0u; i < (1u << window_ntk.num_pis()); ++i)
+    {
+      uint32_t entry = 0u;
+      auto j = 0u;
+      for (auto const& l : w.outputs)
+      {
+        entry |= kitty::get_bit(tts[l], i) << j;
+        ++j;
+      }
+      kitty::set_bit(care, entry);
+    }
+
+    care = ~care;
+
+    std::vector<kitty::dynamic_truth_table> vars;
+    for (auto const& l : w.outputs)
+    {
+      auto it = std::find(leaves.begin(), leaves.end(), ntk.get_node(l));
+      assert(it != leaves.end());
+      uint32_t idx = std::distance(leaves.begin(), it);
+
+      kitty::dynamic_truth_table var(leaves.size());
+      kitty::create_nth_var(var, idx);
+      vars.push_back(var);
+    }
+
+    const auto global_dc = kitty::compose_truth_table(care, vars);
+    global_care &= ~global_dc;
+  }
+
+  return global_care;
+}
 
 } // namespace mockturtle

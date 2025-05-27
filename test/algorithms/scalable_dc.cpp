@@ -1,6 +1,7 @@
 #include <catch.hpp>
 
 #include <filesystem>
+#include <mockturtle/algorithms/cut_enumeration.hpp>
 #include <mockturtle/algorithms/reconv_cut.hpp>
 #include <mockturtle/algorithms/scalable_dc.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
@@ -11,6 +12,7 @@
 #include <mockturtle/utils/window_utils.hpp>
 #include <mockturtle/views/color_view.hpp>
 #include <mockturtle/views/fanout_view.hpp>
+#include <mockturtle/views/topo_view.hpp>
 #include <mockturtle/views/window_view.hpp>
 
 using namespace mockturtle;
@@ -109,6 +111,73 @@ std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, 
   return std::make_tuple( aig, leaves, index );
 }
 
+std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, uint32_t> create_cut3()
+{
+  aig_network aig{};
+  const auto pi1 = aig.create_pi();
+  const auto pi2 = aig.create_pi();
+  const auto pi3 = aig.create_pi();
+  const auto pi4 = aig.create_pi();
+  const auto pi5 = aig.create_pi();
+  const auto pi6 = aig.create_pi();
+  const auto pi7 = aig.create_pi();
+  const auto pi8 = aig.create_pi();
+  const auto pi9 = aig.create_pi();
+  const auto pi10 = aig.create_pi();
+  const auto pi11 = aig.create_pi();
+  const auto pi12 = aig.create_pi();
+  const auto pi13 = aig.create_pi();
+  const auto pi14 = aig.create_pi();
+  //
+  const auto n29 = aig.create_and(!pi11, !pi12);
+  const auto n31 = aig.create_and(!pi14, !pi8);
+  const auto n17 = aig.create_and(!pi5, !pi8);
+  const auto n25 = aig.create_and(pi5, !pi4);
+  const auto n18 = aig.create_and(pi4, !pi9);
+  const auto n15 = aig.create_and(pi3, !pi7);
+  const auto n21 = aig.create_and(pi9, !pi6);
+  //
+  const auto n30 = aig.create_and(!n29, !pi4);
+  const auto n32 = aig.create_and(pi13, !n31);
+  const auto n19 = aig.create_and(n17, n18);
+  const auto n16 = aig.create_and(n15, pi6);
+  //
+  const auto n33 = aig.create_and(!n32, !pi6);
+  const auto n20 = aig.create_and(n19, n16);
+  const auto n22 = aig.create_and(!n16, !n21);
+  //
+  const auto n34 = aig.create_and(!n30, !n33);
+  const auto n23 = aig.create_and(pi8, !n22);
+  //
+  const auto n35 = aig.create_and(!n34, !pi3);
+  const auto n24 = aig.create_and(!n23, !pi10);
+  //
+  const auto n26 = aig.create_and(n25, !n24);
+  const auto n27 = aig.create_and(!n26, !n20);
+  const auto n28 = aig.create_and(!pi2, !n27);
+  const auto n36 = aig.create_and(!n35, !n28);
+  const auto n37 = aig.create_and(!pi1, !n36);
+
+  aig.create_po(n37);
+
+  std::vector<mockturtle::node<aig_network>> leaves{};
+  leaves.push_back( aig.get_node( pi1 ) );
+  leaves.push_back( aig.get_node( pi2 ) );
+  leaves.push_back( aig.get_node( n27 ) );
+  leaves.push_back( aig.get_node( pi3 ) );
+  leaves.push_back( aig.get_node( n33 ) );
+  leaves.push_back( aig.get_node( n29 ) );
+  leaves.push_back( aig.get_node( pi4 ) );
+
+  const auto index = aig.node_to_index( aig.get_node( n37 ) );
+
+  /*std::ostringstream out;
+  write_dot( aig, out );
+  std::cout << out.str() << std::endl;*/
+
+  return std::make_tuple( aig, leaves, index );
+}
+
 std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, uint32_t> create_cut_free()
 {
   aig_network aig{};
@@ -128,18 +197,14 @@ std::tuple<mockturtle::aig_network, std::vector<mockturtle::aig_network::node>, 
   return std::make_tuple( aig, leaves, index );
 }
 
-uint32_t count_zeros( const kitty::dynamic_truth_table& tt )
+uint32_t count_zeros( const kitty::dynamic_truth_table& tt, uint32_t cut_size )
 {
+  uint32_t const num_blocks = ( cut_size > 6 ) ? ( 1u << ( cut_size - 6 ) ) : 1;
   uint32_t count = 0;
-  const uint32_t num_bits = tt.num_bits();
-
-  const auto& bits = tt._bits; // Access the internal bit vector
-
-  for ( uint32_t i = 0; i < num_bits; ++i )
+  for ( uint32_t i = 0; i < num_blocks; ++i )
   {
-    const bool bit_set = ( bits[i / 64] >> ( i % 64 ) ) & 1;
-    if ( !bit_set )
-      ++count;
+    const auto c = tt._bits[i];
+    count += static_cast<uint32_t>( 64 - std::__popcount( c ) ); // count unset bits
   }
 
   return count;
@@ -161,18 +226,18 @@ kitty::dynamic_truth_table simulate_window( Ntk ntk, uint32_t index, const std::
   std::vector<mockturtle::node<Ntk>> roots = { index };
   auto const extended_leaves = reconv_cuts.run( roots ).first;
 
-  std::vector<mockturtle::node<Ntk>> test_leaves{};
+ /* std::vector<mockturtle::node<Ntk>> test_leaves{};
   test_leaves.push_back( 1 );
   test_leaves.push_back( 2 );
   test_leaves.push_back( 3 );
   test_leaves.push_back( 4 );
   test_leaves.push_back( 5 );
   test_leaves.push_back( 6 );
-  test_leaves.push_back( 39 );
+  test_leaves.push_back( 39 );*/
 
-  auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
+  /*auto depth_ntk = mockturtle::depth_view( mockturtle::fanout_view( color_ntk ) );
   create_window_impl windowing( depth_ntk );
-  const auto res = windowing.run( roots[0], window_size, 8 );
+  const auto res = windowing.run( roots[0], window_size, 8 );*/
 
   std::vector<mockturtle::node<Ntk>> gates{ collect_nodes( color_ntk, extended_leaves, roots ) };
   window_view window_ntk{ color_ntk, extended_leaves, roots, gates };
@@ -250,11 +315,44 @@ void print_fi_relations( Ntk const& ntk )
 TEST_CASE( "Find single window", "[scalable_dc]" )
 {
   auto start = std::chrono::high_resolution_clock::now();
-  auto [aig, leaves, index] = create_cut2();
+  auto [aig, leaves, index] = create_cut3();
+
+  static constexpr unsigned cut_size = 7u;
+  cut_enumeration_params ps_c;
+  ps_c.cut_size = cut_size;
+  ps_c.cut_limit = 40u;
+  cut_enumeration_stats st_c;
+  const auto aig_topo = mockturtle::topo_view( aig );
+  const auto cuts = fast_cut_enumeration<decltype( aig_topo ), cut_size, true, cut_enumeration_params>( aig_topo, ps_c, &st_c );
+  for ( auto& cut : cuts.cuts( index ) )
+  {
+    if ( cut->size() != cut_size )
+    {
+      // Ignore cuts which are not maximum size
+      continue;
+    }
+    std::vector<mockturtle::node<aig_network>> _leaves;
+    for ( const auto& l : *cut )
+    {
+      _leaves.push_back( l );
+    }
+    const auto care = simulate_window( aig, index, _leaves );
+    const auto scalable_care = mockturtle::scalable_dc(aig, _leaves);
+
+    const auto zeros = count_zeros( care, _leaves.size() );
+    //std::cout << "Num Zeros: " << zeros << std::endl;
+    const auto zeros_s = count_zeros( scalable_care, _leaves.size() );
+    //std::cout << "Num scalable Zeros: " << zeros_s << std::endl;
+
+    if ( zeros > zeros_s )
+    {
+      std::cout << "Error\n";
+    }
+  }
 
   const auto care = simulate_window( aig, index, leaves );
 
-  const auto zeros = count_zeros( care );
+  const auto zeros = count_zeros( care, leaves.size() );
   std::cout << "Num Zeros: " << zeros << std::endl;
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed_seconds = end - start;
@@ -264,54 +362,15 @@ TEST_CASE( "Find single window", "[scalable_dc]" )
 TEST_CASE( "Find multiple windows", "[scalable_dc]" )
 {
   auto start = std::chrono::high_resolution_clock::now();
-  auto [aig, leaves, index] = create_cut2();
+  auto [aig, leaves, index] = create_cut3();
 
-  mockturtle::color_view<aig_network> color_ntk{ aig };
+  print_fi_relations( aig );
 
-  print_fi_relations( color_ntk );
+  const auto care = mockturtle::scalable_dc(aig, leaves);
 
-  create_dc_windows_impl cut_window( color_ntk );
-  cut_window.run( leaves, 5 );
-
-  kitty::dynamic_truth_table global_care(leaves.size());
-  global_care = ~global_care;
-  for ( const auto& w : cut_window )
-  {
-    kitty::dynamic_truth_table care = kitty::dynamic_truth_table( w.outputs.size() );
-    window_view window_ntk{ color_ntk, w.inputs, w.outputs, w.nodes };
-    default_simulator<kitty::dynamic_truth_table> sim( w.inputs.size() );
-    const auto tts = simulate_nodes<kitty::dynamic_truth_table>( window_ntk, sim );
-    for ( auto i = 0u; i < ( 1u << window_ntk.num_pis() ); ++i )
-    {
-      uint32_t entry{ 0u };
-      auto j = 0u;
-      for ( auto const& l : w.outputs )
-      {
-        entry |= kitty::get_bit( tts[l], i ) << j;
-        ++j;
-      }
-      kitty::set_bit( care, entry );
-    }
-
-    // don't care set
-    care = ~care;
-
-    std::vector<kitty::dynamic_truth_table> vars;
-    for (auto const& l : w.outputs)
-    {
-      auto it = std::find(leaves.begin(), leaves.end(), aig.get_node(l));
-      assert(it != leaves.end()); // ensure l is in leaves
-      uint32_t idx = std::distance(leaves.begin(), it);
-
-      kitty::dynamic_truth_table var (leaves.size());
-      kitty::create_nth_var(var, idx);
-      vars.push_back( var );
-    }
-    const auto global_dc = kitty::compose_truth_table(care, vars);
-    global_care &= ~global_dc;
-
-    int z = 0;
-  }
-
-  int z = 0;
+  const auto zeros = count_zeros( care, leaves.size() );
+  std::cout << "Num Zeros: " << zeros << std::endl;
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed_seconds = end - start;
+  std::cout << "Execution time: " << elapsed_seconds.count() << "s\n";
 }
