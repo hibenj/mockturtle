@@ -279,6 +279,97 @@ public:
     return changed;
   }
 
+  uint64_t expansion_cost( const node& n ) const
+  {
+    if ( can_expand_for_free( n ) )
+      return 0;
+
+    // Otherwise, use some guided cost
+    // const int fanout = ntk.fanout_size(n);
+    // const int level = ntk.level(n);
+    //const int overlap = __builtin_popcountll(visited.at(n));
+
+    return static_cast<uint64_t>( 1 );  // customize
+  }
+
+  uint64_t cost_r( node const& n ) const
+  {
+    /* make sure the node is in the construction zone */
+    assert( ntk.visited( n ) == ntk.trav_id() );
+
+    /* cannot expand over a constant or CI node */
+    if ( ntk.is_constant( n ) || ntk.is_ci( n ) )
+    {
+      return std::numeric_limits<uint64_t>::max();
+    }
+
+    /* count the number of leaves that we haven't visited */
+    uint64_t cost{ 0 };
+    ntk.foreach_fanin( n, [&]( signal const& fi ) {
+      cost += ntk.visited( ntk.get_node( fi ) ) != ntk.trav_id();
+    } );
+
+    /* always accept if the number of leaves does not increase */
+    if ( cost < ntk.fanin_size( n ) )
+    {
+      return cost;
+    }
+
+    /* skip nodes with many fanouts */
+    if ( ntk.fanout_size( n ) > 10000 )
+    {
+      return std::numeric_limits<uint64_t>::max();
+    }
+
+    /* return the number of nodes that will be on the leaves if this node is removed */
+    return cost;
+  }
+
+  bool expand_cut_information_guided( std::vector<node>& inputs )
+  {
+    std::optional<node> best_node;
+    uint64_t best_cost = std::numeric_limits<uint64_t>::max();
+
+    // Step 1: Find best expandable node
+    for ( const auto& n : inputs )
+    {
+      uint64_t const cost = expansion_cost( n );
+      if ( cost == 0u )
+      {
+        best_cost = cost;
+        best_node = n;
+        break; // early exit for zero-cost
+      }
+
+      if ( !should_expand( n ) )
+        continue;
+
+      if ( cost < best_cost )
+      {
+        best_cost = cost;
+        best_node = n;
+      }
+    }
+
+    if ( !best_node )
+      return false; // nothing expandable
+
+    // Step 2: Remove best_node from inputs
+    inputs.erase( std::remove( inputs.begin(), inputs.end(), *best_node ), inputs.end() );
+
+    // Step 3: Add fanins (if not visited/painted)
+    ntk.foreach_fanin( *best_node, [&]( signal const& fi ) {
+      node const fanin = ntk.get_node( fi );
+      if ( ntk.visited( fanin ) != ntk.trav_id() )
+      {
+        ntk.paint( fanin );
+        inputs.push_back( fanin );
+      }
+    });
+
+    return true;
+  }
+
   void build_window( std::vector<node> const& leaves, uint64_t leave_set )
   {
     std::vector<node> inputs;
@@ -307,11 +398,11 @@ public:
       changed = false;
 
       // Step 2: zero-cost expansion
-      if ( expand_cut_zero_cost( inputs ) )
-        changed = true;
+      /*if ( expand_cut_zero_cost( inputs ) )
+        changed = true;*/
 
       // Step 3: information-driven expansion
-      if ( expand_cut_information( inputs ) )
+      if ( expand_cut_information_guided( inputs ) )
         changed = true;
 
       if ( inputs.size() > 13 )
