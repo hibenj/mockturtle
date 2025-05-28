@@ -117,7 +117,7 @@ public:
     }
   }
 
-  bool can_expand_for_free( const node& n )
+  bool can_expand_for_free( const node& n ) const
   {
     if ( ntk.is_constant( n ) || ntk.is_ci( n ) )
       return false; // constants or PIs cannot be expanded
@@ -218,6 +218,34 @@ public:
     return changed;
   }
 
+  bool should_expand( const node& n ) const
+  {
+    std::unordered_set<node> seen;
+    std::queue<node> queue;
+    queue.push( n );
+
+    while ( !queue.empty() )
+    {
+      const node current = queue.front();
+      queue.pop();
+
+      if ( visited.find( current ) == visited.end() || visited.at( current ) == 0 )
+        continue;
+
+      if ( !seen.insert( current ).second )
+        continue;
+
+      if ( __builtin_popcountll( visited.at( current ) ) > __builtin_popcountll( visited.at( n ) ) )
+        return true;
+
+      ntk.foreach_fanin( current, [&]( auto const& fi ) {
+        queue.push( ntk.get_node( fi ) );
+      } );
+    }
+
+    return false;
+  }
+
   bool expand_cut_information( std::vector<node>& inputs )
   {
     bool changed = false;
@@ -225,36 +253,7 @@ public:
 
     for ( auto it = inputs.begin(); it != inputs.end(); )
     {
-      const auto visited_pop = __builtin_popcountll( visited[*it] );
-      bool should_expand = false;
-
-      std::unordered_set<node> seen;
-      std::queue<node> queue;
-      queue.push( *it );
-
-      while ( !queue.empty() )
-      {
-        node n = queue.front();
-        queue.pop();
-
-        if ( visited.find( n ) == visited.end() || visited[n] == 0 )
-          continue;
-
-        if ( !seen.insert( n ).second )
-          continue;
-
-        if ( __builtin_popcountll( visited[n] ) > visited_pop )
-        {
-          should_expand = true;
-          break;
-        }
-
-        ntk.foreach_fanin( n, [&]( auto const& fi ) {
-          queue.push( ntk.get_node( fi ) );
-        } );
-      }
-
-      if ( !should_expand )
+      if ( !should_expand( *it ) )
       {
         ++it;
         continue;
