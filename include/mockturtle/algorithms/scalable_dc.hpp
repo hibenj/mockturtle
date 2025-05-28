@@ -91,11 +91,12 @@ public:
   {
     for ( uint32_t i = 0; i < leaves.size(); ++i )
     {
-      node const& leaf = leaves[i];
-      uint64_t const bit = uint64_t( 1 ) << i;
+      const node& leaf = leaves[i];
+      const uint64_t bit = uint64_t( 1 ) << i;
 
       std::queue<std::pair<node, uint32_t>> queue;
       queue.emplace( leaf, 0 );
+      levels[leaf] = std::max( levels[leaf], 0u );
 
       while ( !queue.empty() )
       {
@@ -106,9 +107,12 @@ public:
           continue;
 
         if ( ( visited[n] & bit ) != 0 )
-          continue; // already marked for this leaf
+          continue;
 
         visited[n] |= bit;
+
+        if ( levels[n] < level )
+          levels[n] = level;
 
         ntk.foreach_fanin( n, [&]( signal const& fi ) {
           queue.emplace( ntk.get_node( fi ), level + 1 );
@@ -218,7 +222,7 @@ public:
     return changed;
   }
 
-  bool should_expand( const node& n ) const
+  bool should_expand( const node& n )
   {
     std::unordered_set<node> seen;
     std::queue<node> queue;
@@ -236,13 +240,17 @@ public:
         continue;
 
       if ( __builtin_popcountll( visited.at( current ) ) > __builtin_popcountll( visited.at( n ) ) )
+      {
+        level_cost[n] = levels[current];
         return true;
+      }
 
       ntk.foreach_fanin( current, [&]( auto const& fi ) {
         queue.push( ntk.get_node( fi ) );
       } );
     }
 
+    level_cost[n] = 5;
     return false;
   }
 
@@ -279,7 +287,7 @@ public:
     return changed;
   }
 
-  uint64_t expansion_cost( const node& n ) const
+  uint32_t expansion_cost( const node& n )
   {
     if ( can_expand_for_free( n ) )
       return 0;
@@ -289,7 +297,7 @@ public:
     // const int level = ntk.level(n);
     //const int overlap = __builtin_popcountll(visited.at(n));
 
-    return static_cast<uint64_t>( 1 );  // customize
+    return level_cost[n];  // customize
   }
 
   uint64_t cost_r( node const& n ) const
@@ -330,10 +338,11 @@ public:
     std::optional<node> best_node;
     uint64_t best_cost = std::numeric_limits<uint64_t>::max();
 
-    // Step 1: Find best expandable node
+    // Step 1: Find the best expandable node
     for ( const auto& n : inputs )
     {
-      uint64_t const cost = expansion_cost( n );
+      const bool expand = should_expand( n );
+      const uint64_t cost = expansion_cost( n );
       if ( cost == 0u )
       {
         best_cost = cost;
@@ -341,7 +350,7 @@ public:
         break; // early exit for zero-cost
       }
 
-      if ( !should_expand( n ) )
+      if ( !expand )
         continue;
 
       if ( cost < best_cost )
@@ -437,7 +446,8 @@ protected:
   Ntk const& ntk;
   std::vector<node> path;
   std::vector<uint32_t> refs;
-  std::vector<std::vector<node>> levels;
+  std::unordered_map<node, uint32_t> levels;
+  std::unordered_map<node, uint32_t> level_cost;
 
   std::vector<window> windows;
   std::unordered_map<node, uint64_t> visited;
